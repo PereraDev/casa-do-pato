@@ -1,0 +1,39 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Env files (server/.env holds DATABASE_URL/SESSION_SECRET)
+.env
+.env.local
+!.env.example
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Segredos e artefatos locais (nunca versionar)
+.env.*
+!.env.example
+strix_runs/
+*.zip
+*.pem
+*.key
+.claude/settings.local.json
+server/.env

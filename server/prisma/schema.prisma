@@ -1,0 +1,249 @@
+// Schema do back-end MVP (pedidos + tempo real) do Casa do Pato.
+// Só modela o que saiu do localStorage nesta etapa: contas, pedidos, chamado
+// de garçom e pedido em grupo. Cardápio/estoque, fidelidade/cashback, PDV/
+// caixa, funcionários e config da loja continuam em localStorage (ver
+// CLAUDE.md, seção "Integração com o painel administrativo").
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senhaHash String
+  criadoEm  DateTime @default(now())
+  pedidos   Order[]
+}
+
+// Pedido — campos escalares que fazem sentido tipados/indexáveis viram
+// coluna real; itens/divisao/agendamento/grupoSnapshot ficam em JSONB porque
+// são arrays/objetos cuja forma é 100% definida pelo front
+// (montarPedidoPendente em AppContext.jsx) e nada nesta etapa precisa
+// consultá-los relacionalmente.
+model Order {
+  seq            Int      @id @default(autoincrement())
+  criadoEm       DateTime @default(now())
+  statusManual   String? // recebido | preparo | pronto | entregue — só o KDS do admin escreve; null = cliente calcula pelo relógio (ver utils/pedidos.js#statusPedido)
+  canceladoAdmin Boolean  @default(false)
+
+  clienteEmail String? // exibição/histórico — não é mais a fonte de identidade
+  userId       String?
+  user         User?   @relation(fields: [userId], references: [id])
+  guestId      String? // identidade de visitante, emitida pela sessão (ver plugins/session.js)
+
+  total   Decimal @db.Decimal(10, 2)
+  tipo    String // balcao | mesa | entrega
+  mesa    String?
+  endereco String?
+
+  origem      String? // "pdv" | null (= cliente via QR)
+  taxaEntrega Decimal? @db.Decimal(10, 2) // só existe em vendas do PDV
+  caixaId     String? // vínculo opaco com o caixa do PDV (caixa continua 100% client-side)
+
+  pagamento     String // pix | cartao | dinheiro | dividido
+  cupom         String?
+  cashbackUsado Decimal @default(0) @db.Decimal(10, 2)
+  observacoes   String?
+  avaliado      Boolean @default(false)
+
+  itens         Json // [{itemId, nome, qtd, subtotal, participanteNome?}]
+  divisao       Json? // [{pessoa, valor, pagamento}] | null
+  agendamento   Json? // {data, hora} | null
+  grupoSnapshot Json? // {codigo, participantes} — snapshot no fechamento do pedido
+
+  @@index([userId])
+  @@index([guestId])
+  @@index([criadoEm])
+}
+
+model WaiterCall {
+  seq         Int       @id @default(autoincrement())
+  mesa        String
+  motivo      String
+  criadoEm    DateTime  @default(now())
+  atendidoEm  DateTime?
+  atendidoPor Json? // snapshot {id, nome, funcao} do funcionário — sem relação de verdade porque Funcionários ainda é só localStorage do admin
+  notaCliente Int?
+}
+
+// Pedido em grupo — participantes e itens ficam em tabelas normalizadas (não
+// JSONB) de propósito: o utils/grupo.js atual muta o carrinho por ÍNDICE de
+// array, o que é uma corrida latente entre 2 participantes mexendo ao mesmo
+// tempo. IDs de linha reais eliminam esse risco e permitem o Socket.IO
+// mandar só o diff de 1 item por evento, não o carrinho inteiro.
+model GroupOrder {
+  codigo        String             @id // código de 5 caracteres, gerado com retry em caso de colisão
+  criadoEm      DateTime           @default(now())
+  participantes GroupParticipant[]
+  itens         GroupItem[]
+}
+
+model GroupParticipant {
+  id          String     @id @default(cuid())
+  grupo       GroupOrder @relation(fields: [grupoCodigo], references: [codigo], onDelete: Cascade)
+  grupoCodigo String
+  nome        String
+  criadoEm    DateTime   @default(now())
+
+  @@index([grupoCodigo])
+}
+
+model GroupItem {
+  id                    String     @id @default(cuid())
+  grupo                 GroupOrder @relation(fields: [grupoCodigo], references: [codigo], onDelete: Cascade)
+  grupoCodigo           String
+  itemId                String
+  qtd                   Int
+  addons                Json // [{nome, qtd, preco}]
+  ingredientesRemovidos Json // string[]
+  precoUnitario         Decimal    @db.Decimal(10, 2)
+  participanteId        String?
+  participanteNome      String
+  criadoEm              DateTime   @default(now())
+
+  @@index([grupoCodigo])
+}
+
+// ===== ERP (Insumos/Compras/Financeiro) =====
+// Módulo administrativo (só usado pelo admin.html) que ficou de fora do MVP
+// original. Segue as mesmas convenções acima: `seq Int @default(autoincrement())`
+// pras entidades formatadas com prefixo (ver lib/ids.js), `cuid()` pras
+// entidades tratadas como id opaco, `Decimal` pra todo valor monetário/
+// quantidade. Ver CLAUDE.md, seção "ERP administrativo".
+model Insumo {
+  seq           Int      @id @default(autoincrement())
+  nome          String
+  unidade       String // kg | g | l | ml | un
+  estoqueAtual  Decimal  @default(0) @db.Decimal(10, 3)
+  estoqueMinimo Decimal? @db.Decimal(10, 3)
+  custoUnitario Decimal? @db.Decimal(10, 2) // usado no CMV do relatório
+  ativo         Boolean  @default(true) // soft delete — tem histórico (movimentos/receitas) que não pode virar órfão
+  criadoEm      DateTime @default(now())
+
+  fornecedorPadraoId String?
+  fornecedorPadrao   Fornecedor? @relation(fields: [fornecedorPadraoId], references: [id], onDelete: SetNull)
+
+  receitas    RecipeItem[]
+  movimentos  MovimentoEstoque[]
+  itensCompra PurchaseItem[]
+
+  @@index([fornecedorPadraoId])
+}
+
+// "Ficha técnica": quanto de cada insumo 1 unidade vendida de um prato
+// consome. `itemId` é o id do prato no catálogo (MENU_BASE/extras,
+// data/data.js) — sem FK porque o catálogo em si vive no front-end, não no
+// Postgres (mesmo trade-off de Order.itens/GroupItem.itemId).
+model RecipeItem {
+  id         String  @id @default(cuid())
+  itemId     String
+  insumoId   Int
+  insumo     Insumo  @relation(fields: [insumoId], references: [seq], onDelete: Cascade)
+  quantidade Decimal @db.Decimal(10, 3)
+
+  @@unique([itemId, insumoId])
+  @@index([itemId])
+}
+
+// Ledger de entrada/saída de estoque de insumo — histórico imutável (nunca
+// editado/apagado), alimentado por vendas (saida), recebimento de compra
+// (entrada) e ajustes manuais (entrada ou saida).
+model MovimentoEstoque {
+  seq        Int      @id @default(autoincrement())
+  insumoId   Int
+  insumo     Insumo   @relation(fields: [insumoId], references: [seq], onDelete: Cascade)
+  tipo       String // entrada | saida
+  quantidade Decimal  @db.Decimal(10, 3)
+  motivo     String? // "venda:PD-123" | "compra:CP-45" | "ajuste: <texto>"
+  criadoEm   DateTime @default(now())
+
+  @@index([insumoId])
+  @@index([criadoEm])
+}
+
+model Fornecedor {
+  id        String   @id @default(cuid())
+  nome      String
+  documento String?
+  telefone  String?
+  email     String?
+  endereco  String?
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+
+  insumos     Insumo[]
+  compras     PurchaseOrder[]
+  contasPagar ContaPagar[]
+}
+
+// "Compra" — pedido de compra a um fornecedor. Ao criar, já gera a
+// ContaPagar vinculada (1:1); ao "receber", credita o estoque dos insumos
+// (tudo-ou-nada, sem recebimento parcial nesta etapa).
+model PurchaseOrder {
+  seq          Int        @id @default(autoincrement())
+  fornecedorId String
+  fornecedor   Fornecedor @relation(fields: [fornecedorId], references: [id])
+  status       String     @default("pendente") // pendente | recebido | cancelado
+  total        Decimal    @db.Decimal(10, 2)
+  observacoes  String?
+  criadoEm     DateTime   @default(now())
+  recebidoEm   DateTime?
+
+  itens      PurchaseItem[]
+  contaPagar ContaPagar?
+
+  @@index([fornecedorId])
+  @@index([criadoEm])
+}
+
+model PurchaseItem {
+  id            String        @id @default(cuid())
+  compraId      Int
+  compra        PurchaseOrder @relation(fields: [compraId], references: [seq], onDelete: Cascade)
+  insumoId      Int
+  insumo        Insumo        @relation(fields: [insumoId], references: [seq])
+  quantidade    Decimal       @db.Decimal(10, 3)
+  precoUnitario Decimal       @db.Decimal(10, 2)
+
+  @@index([compraId])
+}
+
+model ContaPagar {
+  seq          Int            @id @default(autoincrement())
+  descricao    String
+  categoria    String? // fornecedor | outro
+  fornecedorId String?
+  fornecedor   Fornecedor?    @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  compraId     Int?           @unique
+  compra       PurchaseOrder? @relation(fields: [compraId], references: [seq], onDelete: SetNull)
+  valor        Decimal        @db.Decimal(10, 2)
+  vencimento   DateTime
+  pagoEm       DateTime?
+  status       String         @default("pendente") // pendente | pago | cancelado
+  criadoEm     DateTime       @default(now())
+
+  @@index([vencimento])
+  @@index([fornecedorId])
+}
+
+// Recebíveis avulsos — não ligados a Order, porque o pedido do cliente já
+// tem seu próprio ciclo de pagamento (Pix/cartão/dinheiro/pendente-*).
+model ContaReceber {
+  seq         Int       @id @default(autoincrement())
+  descricao   String
+  clienteNome String?
+  valor       Decimal   @db.Decimal(10, 2)
+  vencimento  DateTime
+  recebidoEm  DateTime?
+  status      String    @default("pendente") // pendente | recebido | cancelado
+  criadoEm    DateTime  @default(now())
+
+  @@index([vencimento])
+}
