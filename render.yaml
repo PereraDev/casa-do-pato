@@ -1,0 +1,28 @@
+# Blueprint do Render: um único serviço web Node que serve tudo (API, Socket.IO,
+# app React e painel admin) — mesma arquitetura do `npm run dev:all`, em 1 processo.
+# Os segredos NÃO ficam aqui: DATABASE_URL, SESSION_SECRET e GEMINI_API_KEY são
+# preenchidos no painel do Render (sync: false); ADMIN_TOKEN é gerado pelo Render.
+services:
+  - type: web
+    name: casa-do-pato
+    runtime: node
+    plan: free
+    # install com devDependencies (o Vite precisa delas pra buildar, e o Render
+    # seta NODE_ENV=production, que por padrão as pularia) → build do front →
+    # dependências do server → client do Prisma → migrations no banco.
+    buildCommand: npm install --include=dev && npm run build && cd server && npm install && npx prisma generate && npx prisma migrate deploy
+    startCommand: cd server && npm run start:prod
+    healthCheckPath: /api/auth/me
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false

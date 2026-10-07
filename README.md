@@ -157,6 +157,21 @@ Para recuperar senha de cliente, o código de 6 dígitos aparece no **console do
 | `cd server && npm test` | Testes de segurança (não escrevem no banco) |
 | `cd server && npm run prisma:studio` | Interface gráfica do banco |
 
+## Deploy no Render
+
+O projeto precisa de um servidor Node que fique ligado (Socket.IO usa conexões persistentes), por isso **não** roda em plataformas só de funções serverless, como a Vercel. O arquivo [`render.yaml`](render.yaml) descreve um único serviço web que serve a API, o tempo real, o app e o painel.
+
+1. Tenha um banco PostgreSQL (Neon). Use a string de conexão **direta**, a que não tem `-pooler` no endereço, porque as migrations não funcionam bem pelo pooler.
+2. No [Render](https://render.com): **New**, **Blueprint**, escolha este repositório. O Render lê o `render.yaml`. Se o repositório for privado, autorize o acesso do Render ao GitHub.
+3. Preencha as variáveis que o Render pedir:
+   - `DATABASE_URL`: a string do passo 1.
+   - `SESSION_SECRET`: 64 caracteres hexadecimais (gere com o comando de `node -e` da seção Configuração). **Use um valor novo**, diferente do seu `.env` local.
+   - `GEMINI_API_KEY`: opcional.
+4. Ao terminar o deploy, o `ADMIN_TOKEN` fica em **Environment** do serviço (o Render o gera sozinho). Ele é a chave pedida no login do painel.
+5. Acesse `https://<nome-do-servico>.onrender.com` e `/admin.html`.
+
+No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o primeiro acesso seguinte demora cerca de 1 minuto. Abra o site antes de uma apresentação. Em produção, o código de recuperação de senha aparece nos **Logs** do serviço no Render.
+
 ## Segurança
 
 - Senhas de clientes com **bcrypt** (custo 12) e política de senha forte validada no servidor.

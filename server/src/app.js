@@ -17,7 +17,10 @@ import pedidosRoutes from "./routes/pedidos.js";
 // Fastify instance sozinha, sem `.listen()` — deixa server.js decidir a
 // porta, e permite testar/inspecionar a instância sem abrir rede de verdade.
 export async function buildApp() {
-  const fastify = Fastify({ logger: true });
+  // Em produção (Render) há 1 proxy na frente: sem isso request.ip seria o IP do
+  // proxy pra todo mundo e o rate limit viraria um balde só. `1` confia só no
+  // último salto (não dá pra forjar X-Forwarded-For). Fora de produção, não confia em nada.
+  const fastify = Fastify({ logger: true, trustProxy: process.env.NODE_ENV === "production" ? 1 : false });
 
   // 5xx nunca vaza mensagem interna (Prisma/stack) pro cliente; 4xx (corpo
   // inválido, rate limit) devolve a mensagem no formato { erro } que o front lê.

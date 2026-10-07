@@ -64,6 +64,20 @@ Opcional: `GEMINI_API_KEY` (grátis em [aistudio.google.com/apikey](https://aist
 pra ligar a busca por IA do cardápio — sem ela, a busca cai de volta pro
 filtro de texto comum (ver "Busca por IA no cardápio" abaixo).
 
+### Deploy (Render)
+
+`render.yaml` na raiz descreve 1 serviço web Node (Fastify serve `dist/` + API +
+Socket.IO, ver `staticFrontend.js`). Vercel e outras plataformas serverless
+**não servem**: Socket.IO precisa de processo persistente, e o código de
+recuperação de senha e o rate limit vivem na memória do processo. Build:
+`npm install --include=dev && npm run build && cd server && npm install &&
+npx prisma generate && npx prisma migrate deploy`; start: `cd server && npm run
+start:prod` (sem `--env-file`, as variáveis vêm do painel). `prisma` está em
+`dependencies` do server de propósito (o Render roda com `NODE_ENV=production`,
+que pula devDependencies). Em produção o Fastify usa `trustProxy: 1` (1 proxy
+na frente) pro rate limit enxergar o IP real; fora dela, `false`. `DATABASE_URL`
+precisa ser a conexão **direta** do Neon (sem `-pooler`) pras migrations.
+
 ## Arquitetura geral
 
 ```
