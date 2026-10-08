@@ -14,6 +14,7 @@ const NOVA_SENHA = "OutraSenha99";
 
 let app;
 const enviados = []; // e-mails que o servidor tentou mandar pelo Resend
+let provedorRecusa = false; // simula o Resend recusando o envio (ex.: destinatário fora do sandbox)
 const fetchOriginal = globalThis.fetch;
 const env = { ...process.env };
 
@@ -28,6 +29,7 @@ before(async () => {
   globalThis.fetch = async (url, opts) => {
     assert.equal(url, "https://api.resend.com/emails");
     assert.equal(opts.headers.Authorization, "Bearer re_teste");
+    if (provedorRecusa) return new Response('{"message":"You can only send testing emails to your own email address"}', { status: 403 });
     enviados.push(JSON.parse(opts.body));
     return new Response("{}", { status: 200 });
   };
@@ -51,10 +53,20 @@ test("cadastro recusa e-mail com formato inválido", async () => {
   assert.equal(enviados.length, 0);
 });
 
+test("cadastro avisa quando o provedor recusa o envio (não finge que mandou)", async () => {
+  const emailC = `teste-email-c-${sufixo}@teste.local`;
+  provedorRecusa = true;
+  const r = await req("POST", "/api/auth/cadastro", { nome: "Sem Entrega", email: emailC, senha: SENHA });
+  provedorRecusa = false;
+  assert.equal(r.statusCode, 201);
+  assert.deepEqual(r.json(), { precisaVerificar: true, email: emailC, emailEnviado: false });
+  assert.equal(enviados.length, 0);
+});
+
 test("cadastro manda código ao e-mail do cliente e NÃO loga até confirmar", async () => {
   const r = await req("POST", "/api/auth/cadastro", { nome: "Cliente Teste", email, senha: SENHA });
   assert.equal(r.statusCode, 201);
-  assert.deepEqual(r.json(), { precisaVerificar: true, email });
+  assert.deepEqual(r.json(), { precisaVerificar: true, email, emailEnviado: true });
   assert.equal(enviados.length, 1);
   assert.deepEqual(enviados[0].to, [email]);
   assert.match(enviados[0].text, /\b\d{6}\b/);

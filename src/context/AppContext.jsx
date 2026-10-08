@@ -1477,7 +1477,11 @@ export function AppProvider({ children }) {
     return apiFetch("/api/auth/cadastro", { method: "POST", body: { nome, email, senha } })
       .then((resp) => {
         if (resp.precisaVerificar) {
-          showToast(`Enviamos um código para ${email}`);
+          showToast(
+            resp.emailEnviado === false
+              ? "Conta criada, mas não conseguimos enviar o e-mail agora. Toque em “Reenviar código” em instantes."
+              : `Enviamos um código para ${email}`,
+          );
           return "verificar";
         }
         setSessao(resp);

@@ -35,21 +35,22 @@ export default async function authRoutes(fastify) {
   }
 
   // Manda o código por e-mail (com o log de desenvolvimento quando o envio está
-  // desligado). Nunca lança: falha de provedor vira log, e a resposta da rota não
-  // muda (não revela se a conta existe, nem trava o cadastro).
+  // desligado). Nunca lança: falha de provedor vira log. Devolve "enviado", "espera"
+  // (já saiu um código há menos de 1 min) ou "falhou" — só o cadastro usa isso pra
+  // avisar a pessoa; as outras rotas respondem igual nos 3 casos (não revelam contas).
   async function enviarCodigo(request, { chave, user, motivo }) {
     const codigo = emitirCodigo(chave);
-    if (!codigo) return false; // pediu outro código há menos de 1 min
+    if (!codigo) return "espera";
     if (!emailAtivo()) {
       request.log.warn(`[código ${chave} - envio de e-mail desligado] ${user.email} → ${codigo}`);
-      return true;
+      return "enviado";
     }
     try {
       await enviarEmail({ para: user.email, ...emailComCodigo({ nome: user.nome.split(" ")[0], codigo, motivo }) });
-      return true;
+      return "enviado";
     } catch (err) {
       request.log.error(err, `Falha ao enviar e-mail (${chave})`);
-      return false;
+      return "falhou";
     }
   }
 
@@ -113,12 +114,14 @@ export default async function authRoutes(fastify) {
     }
     reply.code(201);
     if (emailAtivo()) {
-      await enviarCodigo(request, {
+      const envio = await enviarCodigo(request, {
         chave: `ver:${email}`,
         user,
         motivo: "Use o código abaixo para confirmar o seu e-mail e ativar a sua conta.",
       });
-      return { precisaVerificar: true, email };
+      // emailEnviado:false = o provedor recusou (ex.: remetente de testes do Resend só
+      // entrega no e-mail do dono da conta) — a tela avisa em vez de fingir que enviou.
+      return { precisaVerificar: true, email, emailEnviado: envio !== "falhou" };
     }
     request.session.set("userId", user.id);
     return sessaoUsuario(user);
