@@ -905,7 +905,11 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
   e `/api/garcom/chamadas{,/pendentes,/:id/atender}`. A room de socket `admin`
   só aceita `admin:entrar` com sessão de funcionário válida (cookie lido no
   handshake, `sockets.js`); `admin:sair` sai dela. No `admin.html` o login é
-  só usuário e senha.
+  só usuário e senha. **Importante**: o servidor lê o cookie só
+  no handshake, e o socket do painel conecta ao carregar a página (antes do
+  login) — por isso `init.js` faz `socket.disconnect(); socket.connect()` logo
+  depois de logar; sem isso a conexão nunca é reconhecida como de funcionário e
+  pedidos novos só aparecem ao recarregar.
 - **Rate limit** (`@fastify/rate-limit`): 300/min global; 10/min em login/
   cadastro/recuperar/redefinir e na busca por IA; 5/min no login admin;
   20/min em `POST /api/pedidos`; 30/min nas rotas de entrar/ler grupo.

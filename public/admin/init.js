@@ -68,6 +68,12 @@ document.getElementById("loginForm").addEventListener("submit", function (e) {
     try { localStorage.removeItem("tnm_admin_funcionarios"); localStorage.removeItem("tnm_admin_funcoes"); } catch {}
     return Promise.all([carregarFuncoesCache(), carregarFuncionariosCache()]);
   }).then(function () {
+    // O socket conecta quando a página carrega, ANTES do login, e o servidor só lê o
+    // cookie no momento da conexão — sem reconectar, ele nunca é reconhecido como de
+    // funcionário e não entra na sala "admin" (pedidos novos não chegam ao vivo).
+    // initSocket() cuida do "connect" que vem a seguir (entra na sala e recarrega os caches).
+    socket.disconnect();
+    socket.connect();
     erro.style.display = "none";
     document.getElementById("loginPass").value = "";
     document.getElementById("login-screen").style.display = "none";
