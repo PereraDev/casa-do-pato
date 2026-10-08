@@ -57,8 +57,8 @@ A experiência segue a linha de apps como iFood e Uber Eats, mas pensada para qu
 
 O projeto é **híbrido**:
 
-- **No back-end (Postgres + Socket.IO):** contas e login, pedidos, chamados de garçom, pedido em grupo, ERP e a busca por IA.
-- **No navegador (`localStorage`):** cardápio editado, fidelidade, carteira, PDV e caixa, funcionários e configurações da loja.
+- **No back-end (Postgres + Socket.IO):** contas e login (clientes e equipe), pedidos, chamados de garçom, pedido em grupo, ERP e a busca por IA.
+- **No navegador (`localStorage`):** cardápio editado, fidelidade, carteira, PDV e caixa e configurações da loja.
 
 Tudo que roda no servidor sincroniza em tempo real entre dispositivos. O resto funciona offline, simulando a latência de rede.
 
@@ -172,7 +172,8 @@ Para criar a chave: abra uma conta gratuita em [resend.com](https://resend.com),
 | `npm run build` | Gera o `dist/` |
 | `npm run lint` | Roda o Oxlint |
 | `npm run gerar:catalogo` | Regenera o catálogo do painel (roda sozinho em `dev` e `build`) |
-| `cd server && npm test` | Testes de segurança (não escrevem no banco) |
+| `cd server && npm test` | 20 testes do back-end (segurança, socket e e-mail). Criam e apagam registros temporários no banco do `.env`; não rode contra produção |
+| `cd server && npm run admin:criar` | Cria (ou redefine a senha de) um administrador do painel |
 | `cd server && npm run prisma:studio` | Interface gráfica do banco |
 
 ## Deploy no Render

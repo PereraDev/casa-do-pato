@@ -462,8 +462,9 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   a resposta chegou com a aba fechada); a nota (1–5) grava `notaCliente` no
   próprio chamado, lido de volta pela aba Garçons do admin (média por
   funcionário).
-- **Conta/sessão**: login, cadastro, recuperação de senha (fluxo simulado
-  em 2 etapas, sem envio de e-mail real) e modo visitante. Contas agora
+- **Conta/sessão**: login, cadastro (com confirmação do e-mail por código
+  quando o envio está ligado), recuperação de senha por código enviado ao e-mail
+  (2 etapas) e modo visitante — ver "Segurança" pro fluxo de e-mail. Contas agora
   vivem numa tabela `User` no Postgres (`server/`), com senha em hash
   **bcrypt cost 12** (via `bcryptjs`, sem precisar compilar binário nativo)
   — não é mais texto puro como era antes (isso continua valendo só pro
@@ -783,9 +784,9 @@ Projeto Node separado (próprio `package.json`), irmão de `src/`. É dono de
 4 fatias com estado de verdade — **auth (contas + sessão), pedidos,
 chamado de garçom e pedido em grupo** — decidido deliberadamente assim pra
 não virar um projeto do zero de "reescrever tudo": cardápio/estoque,
-fidelidade/cashback, carteira, PDV/caixa, funcionários e config da loja
-continuam 100% `localStorage`, exatamente como descrito no resto deste
-documento. Tem ainda uma **5ª fatia bem mais leve, sem estado nenhum**: a
+fidelidade/cashback, carteira, PDV/caixa e config da loja continuam 100%
+`localStorage`, exatamente como descrito no resto deste documento (a equipe do
+painel — funcionários e funções — já mora no Postgres, ver "Segurança"). Tem ainda uma **5ª fatia bem mais leve, sem estado nenhum**: a
 busca por IA do cardápio (`POST /api/ia/busca`), que só existe no back-end
 pra não expor a chave da API do Gemini no cliente — não lê nem escreve no
 Postgres, só repassa a pergunta + o catálogo (que o cliente manda a cada
@@ -807,7 +808,11 @@ rotas, sem `.listen()`); `server.js` é o entrypoint que sobe a porta;
 `chamada:<id>`), `staticFrontend.js` (só em produção — serve o `dist/` da
 raiz, que já inclui `public/admin.html`, num único processo); `routes/` —
 `auth.js`, `pedidos.js`, `garcom.js`, `grupo.js`, `ia.js` (busca por IA,
-sem tabela própria); `lib/` — `senha.js` (hash bcrypt cost 12 +
+sem tabela própria), `equipe.js` (funcionários e funções do painel), mais as
+rotas do ERP; `plugins/admin.js` (login do painel e `exigirAdmin`);
+`scripts/criar-admin.js` (`npm run admin:criar`); `lib/` — `email.js` (envio via
+Resend + validação de domínio), `codigos.js` (códigos de 6 dígitos), `funcoes.js`
+(funções padrão), `senha.js` (hash bcrypt cost 12 +
 `motivoSenhaFraca`, validação de senha forte), `ids.js` (formata `seq` do
 Prisma como `"PD-"`/`"CG-"` + `seq`), `serializers.js` (linha do Prisma →
 shape JSON que o front já espera, mesmo nome de campo que tinha em
@@ -818,8 +823,9 @@ shape JSON que o front já espera, mesmo nome de campo que tinha em
 `itens`/`divisao`/`agendamento`/`grupoSnapshot` em JSONB porque a forma é
 100% definida pelo front e nada aqui precisa consultar isso
 relacionalmente), `WaiterCall` (chamado de garçom — `atendidoPor` também é
-JSON, um snapshot, porque não existe uma tabela `Employee` real: Funcionários
-continua só `localStorage` do admin), `GroupOrder` + `GroupParticipant` +
+JSON, um snapshot do funcionário que atendeu — a equipe agora existe nas
+tabelas `Funcionario`/`Funcao`, mas o snapshot evita depender dela no
+histórico), `Funcionario` + `Funcao` (equipe do painel), `GroupOrder` + `GroupParticipant` +
 `GroupItem` (pedido em grupo — aqui SIM normalizado em tabelas de verdade,
 não JSONB, porque o antigo `utils/grupo.js` mutava o carrinho por índice de
 array, o que era uma corrida latente entre 2 participantes mexendo ao mesmo
@@ -832,8 +838,9 @@ só o diff de 1 item por evento).
 rotas com URL relativa e caem no proxy. Em produção, o próprio Fastify serve
 o `dist/` inteiro (`staticFrontend.js`) — um processo só.
 
-**Rotas** — auth: `/api/auth/{cadastro,login,logout,me,recuperar,
-redefinir}`. Pedidos: `POST /api/pedidos` (checkout do cliente, identidade
+**Rotas** — auth: `/api/auth/{cadastro,verificar-email,reenviar-codigo,login,
+logout,me,recuperar,redefinir,usuarios}`; painel: `/api/admin/{login,logout,
+funcionarios,funcoes}`. Pedidos: `POST /api/pedidos` (checkout do cliente, identidade
 sempre da sessão, nunca do corpo), `POST /api/pedidos/pdv` (venda do PDV
 admin), `GET /api/pedidos/meus` (histórico da sessão atual — conta ou
 `guestId`), `GET /api/pedidos/fila` (fila pública mínima, pra
@@ -936,7 +943,10 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
   `unidade` de insumo (kg/g/l/ml/un) são validados no servidor.
 - **Cookie de sessão**: `secure` em produção, `maxAge` de 30 dias.
 - **Testes**: `cd server && npm test` (`test/seguranca.test.js`,
-  `test/socket-admin.test.js`) — não escrevem no banco.
+  `test/socket-admin.test.js`, `test/email.test.js` — 20 testes). Usam o banco do
+  `.env`: criam registros temporários (`...@teste.local`, funcionários e contas de
+  cliente) e apagam no fim; o Resend é simulado, nenhum e-mail sai. **Não rode
+  apontando pro banco de produção.**
 
 ## ERP administrativo (`server/`)
 
@@ -1366,7 +1376,8 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
 - Comentários existentes explicam decisões não óbvias (por que algo é
   feito de um jeito específico), não o óbvio — seguir esse padrão ao
   editar.
-- Sem testes automatizados configurados no projeto.
+- Testes automatizados só no back-end (`cd server && npm test`, `node:test`); o
+  front não tem suíte — é verificado à mão (ver "Verificação manual").
 
 ## Limitações conhecidas (é um protótipo)
 

@@ -7,6 +7,62 @@ arquitetura atual, sem histórico) — aqui é histórico; lá é o "estado atua
 
 ---
 
+## 2026-10-08 — Segurança, equipe no banco, e-mail, identidade e deploy no Render
+
+### Resumo
+Revisão de segurança do back-end e correção do que ela achou, contas de
+funcionário no Postgres (fim da chave única do admin), confirmação de e-mail e
+recuperação de senha por e-mail, troca de nome/identidade para **Casa do Pato**,
+unificação do catálogo entre app e admin, README/licença e publicação no Render.
+
+### Segurança
+- Revisão estática do `server/` e do admin apontou: redefinição de senha sem
+  prova de posse (qualquer um trocava a senha de qualquer conta), XSS armazenado
+  no admin (`statusManual`/`unidade` sem validação, `esc()` sem escapar aspas),
+  rotas e sala de socket do admin abertas, sem rate limit, enumeração de e-mails.
+- Correções: código de 6 dígitos de uso único na recuperação, whitelists e `esc()`
+  completo, `exigirAdmin` em todas as rotas do admin, `@fastify/rate-limit`,
+  `setErrorHandler` genérico, cookie `secure`/`maxAge`, validação de entrada em
+  pedidos/grupo/garçom/IA. Testes em `server/test/` (20 ao todo).
+
+### Equipe do painel no banco
+- Tabelas `Funcionario`/`Funcao` (senha bcrypt) no lugar do `localStorage` com senha
+  em texto puro e da chave `ADMIN_TOKEN`. CRUD só para a função Administrador;
+  protege o último administrador; apagar a conta derruba o acesso na hora.
+- `npm run admin:criar` cria o primeiro administrador sem tocar no painel da
+  hospedagem. Limite: permissão por seção segue só no painel (client-side).
+
+### E-mail
+- Cadastro com confirmação por código e recuperação de senha por e-mail, via API do
+  Resend (o plano grátis do Render bloqueia SMTP). Valida formato e domínio (MX).
+  Sem `RESEND_API_KEY` volta ao modo desenvolvimento. Sem domínio verificado o
+  Resend só entrega ao dono da conta.
+
+### Identidade e catálogo
+- Sistema renomeado para Casa do Pato (pacotes, e-mails de exemplo, textos), logo
+  e favicon novos. Catálogo-base numa fonte única (`src/data/catalogoBase.js`) com
+  gerador para o admin (`npm run gerar:catalogo`); removidos código morto,
+  `viewMode`, duas dependências de tipos e docs duplicados.
+
+### Deploy
+- `render.yaml`, `start:prod`, `trustProxy: 1`, README com passo a passo. Migrations
+  rodam no build (`prisma migrate deploy`; precisa de conexão direta do Neon).
+
+### Bugs encontrados na prática
+- **Pedidos não chegavam ao vivo no admin**: o socket conectava antes do login e o
+  servidor só lê o cookie no handshake. Correção: reconectar o socket após o login.
+- **Autofill do celular** preenchia o e-mail no campo do código: campo de usuário
+  invisível + validação de 6 dígitos.
+- **`P1002` no deploy**: migration travando pelo pooler do Neon; usar a conexão direta.
+- Cadastro mostrava "enviamos o código" mesmo com o envio recusado pelo provedor;
+  agora avisa.
+
+### Limitações registradas
+Preço/total do pedido vem do cliente; permissão por seção só no painel; códigos em
+memória do processo; pagamentos simulados; sem cabeçalhos de segurança (helmet/CSP).
+
+---
+
 ## 2026-08-28 (continuação) — Revisão de bugs reais, ortografia e alinhamento
 
 ### Resumo
