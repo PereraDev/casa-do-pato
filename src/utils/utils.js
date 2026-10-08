@@ -28,9 +28,10 @@ function salvar(key, value) {
    cookie de sessão (tnm_sessao) viaje em toda request.
    ========================================================================== */
 export class ApiError extends Error {
-  constructor(mensagem, status) {
+  constructor(mensagem, status, dados = null) {
     super(mensagem);
     this.status = status;
+    this.dados = dados; // corpo JSON da resposta de erro (ex.: { precisaVerificar: true })
   }
 }
 
@@ -50,7 +51,7 @@ export async function apiFetch(path, { method = "GET", body } = {}) {
     throw new ApiError("Resposta inválida do servidor", resp.status);
   }
   if (!resp.ok) {
-    throw new ApiError(dados?.erro || "Erro de comunicação com o servidor", resp.status);
+    throw new ApiError(dados?.erro || "Erro de comunicação com o servidor", resp.status, dados);
   }
   return dados;
 }

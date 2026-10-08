@@ -915,9 +915,22 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
   20/min em `POST /api/pedidos`; 30/min nas rotas de entrar/ler grupo.
 - **Erros**: `setErrorHandler` em `app.js` — 5xx nunca devolve mensagem
   interna; 4xx devolve `{erro}`.
-- **Recuperação de senha**: `/recuperar` sempre responde 200 (não enumera
-  e-mails) e gera código de 6 dígitos (15 min, 5 tentativas, uso único) que
-  `/redefinir` exige. Login gasta bcrypt mesmo com e-mail inexistente.
+- **E-mail e códigos** (`lib/email.js`, `lib/codigos.js`): envio pela API HTTPS do
+  Resend (`RESEND_API_KEY`/`EMAIL_FROM`; SMTP não serve — o Render grátis bloqueia
+  as portas). `emailAtivo()` = chave presente. **Ligado**: `/cadastro` valida
+  formato (`emailComFormatoValido`) e domínio (`dominioRecebeEmail`, MX via DNS;
+  `EMAIL_VERIFICAR_DNS=0` desliga nos testes), manda o código e responde
+  `{precisaVerificar:true}` SEM logar; `/verificar-email` confere o código, grava
+  `User.emailVerificadoEm` e loga; `/reenviar-codigo` reenvia; `/login` de conta
+  não confirmada dá 403 `{precisaVerificar:true}`. Recadastrar um e-mail ainda não
+  confirmado sobrescreve nome/senha (ninguém "reserva" o e-mail dos outros).
+  **Desligado** (dev): cadastro entra direto e o código de recuperação sai no log.
+  Códigos de 6 dígitos em memória do processo: 15 min, 5 tentativas, uso único, 1
+  envio/min por chave (`ver:<email>`, `rec:<email>`). `/recuperar` sempre responde
+  200 (não enumera e-mails; `via` = "email"|"log" só escolhe o texto da tela);
+  `/redefinir` valida a senha nova ANTES de gastar o código e também confirma a
+  conta. Login gasta bcrypt mesmo com e-mail inexistente. A migration
+  `email_verificado` marcou as contas existentes como confirmadas.
 - **XSS no admin**: `esc()` escapa `& < > " '`; `statusPill` escapa o
   rótulo; `statusManual` (whitelist recebido/preparo/pronto/entregue) e
   `unidade` de insumo (kg/g/l/ml/un) são validados no servidor.
@@ -1408,9 +1421,12 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   tipo) mas **continua confiando em `total`/`cupom`/`cashbackUsado`
   vindos do cliente** — o catálogo mora no front, então o servidor não
   recalcula preço. Upgrade: mover `MENU` pro Postgres.
-- Recuperação de senha: o código de 6 dígitos vive em memória do processo
-  (some se o servidor reiniciar) e o "e-mail" é um log no console do
-  servidor — não existe envio real.
+- Códigos de confirmação/recuperação vivem em memória do processo (somem se o
+  servidor reiniciar, ex.: o plano grátis do Render "dorme" — o cliente pede outro).
+  Sem `RESEND_API_KEY` não há confirmação de cadastro; sem domínio verificado no
+  Resend, o e-mail só chega ao dono da conta Resend. Contas criadas com o envio
+  desligado ficam sem `emailVerificadoEm` e, ao ligá-lo, precisam usar a
+  recuperação de senha (que também confirma a conta).
 - Status do pedido avança sozinho com o tempo por padrão (não reflete
   cozinha real) — só passa a refletir ações reais da equipe se alguém
   mexer nesse pedido específico pelo Painel de Cozinha (KDS) do admin.

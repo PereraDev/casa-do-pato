@@ -111,6 +111,8 @@ cp server/.env.example server/.env
 | `SESSION_SECRET` | Chave de 32 bytes em hexadecimal para a sessão |
 | `PORT` | Porta da API (padrão `4000`) |
 | `GEMINI_API_KEY` | Opcional. Liga a busca por IA; sem ela, a busca usa filtro de texto |
+| `RESEND_API_KEY` | Opcional. Liga o envio de e-mail (confirmação do cadastro e recuperação de senha); veja [E-mail](#e-mail) |
+| `EMAIL_FROM` | Remetente dos e-mails, ex.: `Casa do Pato <nao-responda@seudominio.com.br>` |
 
 Gere o valor de `SESSION_SECRET` com:
 
@@ -148,7 +150,18 @@ npm run dev:all
 
 No painel, entre com o e-mail e a senha do administrador criado no passo anterior. Depois, a aba **Funcionários** permite cadastrar a equipe, criar funções e escolher quais seções cada pessoa acessa.
 
-Para recuperar senha de cliente, o código de 6 dígitos aparece no **console do servidor** (no Render, em **Logs**, procure por `recuperar senha`). Não há envio de e-mail real.
+Sem `RESEND_API_KEY` o envio de e-mail fica desligado (modo desenvolvimento): o cadastro entra direto e o código de recuperação de senha aparece no **console do servidor** (no Render, em **Logs**).
+
+### E-mail
+
+Com `RESEND_API_KEY` configurada:
+
+- **Cadastro:** o app valida o formato e o domínio do e-mail e envia um código de 6 dígitos. A conta só entra depois que o cliente digita o código, o que prova que o endereço existe e é dele. Contas antigas foram marcadas como confirmadas.
+- **Recuperação de senha:** o código chega na caixa de entrada da conta.
+- O código vale 15 minutos, tem 5 tentativas e só pode ser pedido de novo depois de 1 minuto.
+
+Para criar a chave: abra uma conta gratuita em [resend.com](https://resend.com), gere uma **API Key** e cadastre-a como `RESEND_API_KEY`. **Atenção ao remetente:** sem domínio verificado, o Resend só entrega no e-mail do dono da conta (serve para testar com o seu próprio e-mail). Para enviar a qualquer cliente, verifique um domínio seu em *Domains* no Resend e use um endereço desse domínio em `EMAIL_FROM`.
+
 
 ### Outros comandos
 
@@ -172,6 +185,7 @@ O projeto precisa de um servidor Node que fique ligado (Socket.IO usa conexões 
    - `DATABASE_URL`: a string do passo 1.
    - `SESSION_SECRET`: 64 caracteres hexadecimais (gere com o comando de `node -e` da seção Configuração). **Use um valor novo**, diferente do seu `.env` local.
    - `GEMINI_API_KEY`: opcional.
+   - `RESEND_API_KEY` e `EMAIL_FROM`: opcionais, ligam o envio de e-mail (veja [E-mail](#e-mail)).
 4. Quando o deploy ficar **Live**, crie o administrador do site publicado, **no seu computador**, apontando para o banco de produção (nada é digitado no painel do Render):
 
    ```bash
@@ -181,7 +195,7 @@ O projeto precisa de um servidor Node que fique ligado (Socket.IO usa conexões 
 
 5. Acesse `https://<nome-do-servico>.onrender.com` e `/admin.html` e entre com essa conta.
 
-No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o primeiro acesso seguinte demora cerca de 1 minuto. Abra o site antes de uma apresentação. Em produção, o código de recuperação de senha aparece nos **Logs** do serviço no Render.
+No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o primeiro acesso seguinte demora cerca de 1 minuto. Abra o site antes de uma apresentação. Sem `RESEND_API_KEY`, o código de recuperação de senha aparece nos **Logs** do serviço no Render.
 
 ## Segurança
 
@@ -189,7 +203,7 @@ No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o pr
 - Sessão em cookie cifrado e assinado (`httpOnly`, `sameSite`, `secure` em produção).
 - Rotas e sala de socket do painel exigem sessão de administrador.
 - **Rate limit** global e mais rígido em login, cadastro, recuperação de senha e busca por IA.
-- Recuperação de senha com código de uso único e expiração, sem revelar se o e-mail existe.
+- Cadastro com confirmação de e-mail e recuperação de senha por código de uso único, com expiração e limite de envio, sem revelar se o e-mail existe.
 - Validação de entrada nas rotas públicas e escape de HTML no painel.
 - Segredos ficam só no `server/.env`, que nunca é versionado.
 
@@ -200,7 +214,7 @@ Este é um protótipo acadêmico. Em especial:
 - **Pagamentos simulados:** Pix, cartão e dinheiro não passam por gateway. O código "Pix copia e cola" não é um payload válido.
 - **Preço do pedido vem do cliente:** o cardápio mora no front-end, então o servidor valida formato e limites, mas não recalcula o total.
 - **Permissão por seção só no painel:** as contas de funcionário ficam no banco (senha com bcrypt) e a gestão da equipe exige função Administrador no servidor, mas quais seções cada pessoa vê é decidido pelo painel; no servidor, qualquer funcionário logado alcança as rotas operacionais.
-- **Sem e-mail real:** a recuperação de senha mostra o código no console do servidor.
+- **E-mail depende de configuração:** sem `RESEND_API_KEY` não há confirmação de cadastro e o código de recuperação só aparece no log do servidor; sem domínio verificado no Resend, os e-mails só chegam ao dono da conta Resend.
 - **Recibo do PDV não fiscal.**
 - As imagens do cardápio são placeholders do Unsplash.
 

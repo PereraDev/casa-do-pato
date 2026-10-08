@@ -35,9 +35,10 @@ export function AccountSheet() {
     abrirCarteira,
     abrirReservas,
   } = useApp();
-  const [aba, setAba] = useState("entrar"); // "entrar" | "cadastro" | "recuperar"
+  const [aba, setAba] = useState("entrar"); // "entrar" | "cadastro" | "recuperar" | "verificar"
   const [etapaRecuperar, setEtapaRecuperar] = useState("email"); // "email" | "novaSenha"
   const [emailRecuperar, setEmailRecuperar] = useState("");
+  const [emailVerificar, setEmailVerificar] = useState(""); // e-mail aguardando confirmação
 
   // Reseta o sub-fluxo sempre que o painel é reaberto, pra nunca cair no
   // meio de uma recuperação de senha de uma visita anterior.
@@ -51,6 +52,8 @@ export function AccountSheet() {
   let conteudo;
   if (sessao && sessao.tipo === "usuario") {
     conteudo = <PerfilLogado sessao={sessao} sair={sair} />;
+  } else if (aba === "verificar") {
+    conteudo = <VerificarEmail email={emailVerificar} voltar={() => setAba("entrar")} fechar={fecharConta} />;
   } else if (aba === "recuperar") {
     conteudo = (
       <RecuperarSenha
@@ -73,6 +76,10 @@ export function AccountSheet() {
         irParaRecuperar={() => {
           setAba("recuperar");
           setEtapaRecuperar("email");
+        }}
+        irParaVerificar={(email) => {
+          setEmailVerificar(email);
+          setAba("verificar");
         }}
       />
     );
@@ -219,7 +226,7 @@ function PerfilLogado({ sessao, sair }) {
 // Abas "Entrar"/"Cadastrar" (mais o atalho "Continuar como visitante") —
 // ver o comentário longo abaixo sobre por que os campos de e-mail/senha são
 // inputs não-controlados.
-function LoginCadastro({ aba, setAba, irParaRecuperar }) {
+function LoginCadastro({ aba, setAba, irParaRecuperar, irParaVerificar }) {
   const { login, cadastro, continuarComoVisitante, fecharConta, sessao } = useApp();
   const [loginEmail, setLoginEmail] = useState("");
   const [loginSenha, setLoginSenha] = useState("");
@@ -257,7 +264,9 @@ function LoginCadastro({ aba, setAba, irParaRecuperar }) {
     const form = e.currentTarget;
     const email = valorReal(form, "loginEmail", loginEmail).trim();
     const senha = valorReal(form, "loginSenha", loginSenha);
-    if (await login(email, senha)) fecharConta();
+    const r = await login(email, senha);
+    if (r === "verificar") irParaVerificar(email);
+    else if (r) fecharConta();
   }
   async function onSubmitCadastro(e) {
     e.preventDefault();
@@ -266,8 +275,10 @@ function LoginCadastro({ aba, setAba, irParaRecuperar }) {
     const email = valorReal(form, "cadEmail", cadEmail).trim();
     const senha = valorReal(form, "cadSenha", cadSenha);
     if (!nome || !email || !senha) return;
-    if (await cadastro(nome, email, senha)) fecharConta();
-    else setAba("entrar");
+    const r = await cadastro(nome, email, senha);
+    if (r === "verificar") irParaVerificar(email.toLowerCase());
+    else if (r) fecharConta();
+    // erro de validação (e-mail inválido, senha fraca...): fica no formulário pra corrigir
   }
 
   return (
@@ -290,7 +301,7 @@ function LoginCadastro({ aba, setAba, irParaRecuperar }) {
       {aba === "entrar" ? (
         <form className="conta-form" onSubmit={onSubmitEntrar}>
           <div>
-            <label htmlFor="loginEmail">E-mail ou telefone</label>
+            <label htmlFor="loginEmail">E-mail</label>
             <input
               id="loginEmail"
               type="text"
@@ -342,7 +353,7 @@ function LoginCadastro({ aba, setAba, irParaRecuperar }) {
             />
           </div>
           <div>
-            <label htmlFor="cadEmail">E-mail ou telefone</label>
+            <label htmlFor="cadEmail">E-mail</label>
             <input
               id="cadEmail"
               type="text"
@@ -395,10 +406,84 @@ function LoginCadastro({ aba, setAba, irParaRecuperar }) {
   );
 }
 
+// Confirmação do e-mail depois do cadastro (ou de um login com e-mail ainda não
+// confirmado): a pessoa digita o código de 6 dígitos que chegou na caixa de entrada.
+function VerificarEmail({ email, voltar, fechar }) {
+  const { confirmarEmail, reenviarCodigoEmail, showToast } = useApp();
+  const [espera, setEspera] = useState(60); // segundos até poder pedir outro código
+
+  useEffect(() => {
+    if (espera <= 0) return undefined;
+    const t = setTimeout(() => setEspera((e) => e - 1), 1000);
+    return () => clearTimeout(t);
+  }, [espera]);
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    const codigo = (e.currentTarget.elements.namedItem("verCodigo")?.value ?? "").trim();
+    if (!/^[0-9]{6}$/.test(codigo)) {
+      showToast("Digite o código de 6 dígitos (só números)");
+      return;
+    }
+    if (await confirmarEmail(email, codigo)) fechar();
+  }
+  async function reenviar() {
+    if (await reenviarCodigoEmail(email)) setEspera(60);
+  }
+
+  return (
+    <div className="conta-recuperar">
+      <button type="button" className="link-voltar" onClick={voltar}>
+        ← Voltar
+      </button>
+      <h3>Confirme seu e-mail</h3>
+      <p className="conta-hint">
+        Enviamos um código de 6 dígitos para <strong>{email}</strong>. Confira também a caixa de
+        spam. Ele vale por 15 minutos.
+      </p>
+      <form className="conta-form" onSubmit={onSubmit}>
+        {/* usuário invisível: evita o navegador preencher o e-mail no campo do código */}
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          value={email}
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
+          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+        />
+        <div>
+          <label htmlFor="verCodigo">Código de confirmação</label>
+          <input
+            id="verCodigo"
+            name="verCodigo"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            placeholder="000000"
+            autoComplete="one-time-code"
+            defaultValue=""
+            required
+          />
+        </div>
+        <button type="submit" className="btn-entrar">
+          Confirmar e-mail
+        </button>
+        <button type="button" className="link-esqueci-senha" disabled={espera > 0} onClick={reenviar}>
+          {espera > 0 ? `Reenviar código em ${espera}s` : "Reenviar código"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // Recuperação de senha: fluxo simulado em 2 etapas (protótipo local, sem
 // envio real de e-mail).
 function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
   const { verificarEmailCadastrado, redefinirSenha, showToast } = useApp();
+  const [via, setVia] = useState("email"); // como o código foi entregue: "email" | "log"
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmaSenha, setConfirmaSenha] = useState("");
 
@@ -411,7 +496,9 @@ function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
   async function onSubmitEmail(e) {
     e.preventDefault();
     const emailDigitado = valorReal(e.currentTarget, "recEmail", email).trim();
-    if (await verificarEmailCadastrado(emailDigitado)) {
+    const resultado = await verificarEmailCadastrado(emailDigitado);
+    if (resultado) {
+      setVia(resultado);
       setEmail(emailDigitado);
       setEtapa("novaSenha");
     }
@@ -445,8 +532,9 @@ function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
         <>
           <h3>Nova senha</h3>
           <p className="conta-hint">
-            Código de 6 dígitos "enviado" para {email} (protótipo: aparece nos logs do
-            servidor, válido por 15 min) — digite-o e defina sua nova senha.
+            {via === "email"
+              ? `Se existir uma conta para ${email}, enviamos um código de 6 dígitos para esse e-mail (confira também o spam). Vale por 15 minutos — digite-o e defina sua nova senha.`
+              : `Modo desenvolvimento: o código de 6 dígitos de ${email} saiu no log do servidor (vale por 15 min). Digite-o e defina sua nova senha.`}
           </p>
           <form className="conta-form" onSubmit={onSubmitNovaSenha}>
             {/* Campo de usuário invisível: sem ele o navegador (principalmente no celular)
@@ -517,8 +605,7 @@ function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
         <>
           <h3>Recuperar senha</h3>
           <p className="conta-hint">
-            Informe o e-mail cadastrado. Vamos simular o envio de um código de redefinição
-            (protótipo local, sem envio real de e-mail).
+            Informe o e-mail cadastrado. Enviaremos um código de 6 dígitos para ele.
           </p>
           <form className="conta-form" onSubmit={onSubmitEmail}>
             <div>

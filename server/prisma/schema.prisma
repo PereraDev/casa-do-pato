@@ -14,12 +14,15 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  nome      String
-  email     String   @unique
-  senhaHash String
-  criadoEm  DateTime @default(now())
-  pedidos   Order[]
+  id                String    @id @default(cuid())
+  nome              String
+  email             String    @unique
+  senhaHash         String
+  // null = e-mail ainda não confirmado (código enviado no cadastro); contas anteriores
+  // à verificação foram marcadas como confirmadas na própria migration.
+  emailVerificadoEm DateTime?
+  criadoEm          DateTime  @default(now())
+  pedidos           Order[]
 }
 
 // Pedido — campos escalares que fazem sentido tipados/indexáveis viram

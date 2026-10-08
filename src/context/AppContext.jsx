@@ -1458,6 +1458,8 @@ export function AppProvider({ children }) {
   // por isso viram assíncronas (Promise<boolean>, mesmo contrato de antes,
   // só que resolvido depois de uma resposta de rede em vez de na hora). Ver
   // AccountSheet.jsx, que já usa `await` nesses `onSubmit`.
+  // login/cadastro resolvem `true` (entrou), `false` (erro, já mostrou o toast) ou
+  // `"verificar"` (e-mail ainda não confirmado: a tela vai pedir o código recebido).
   function login(email, senha) {
     return apiFetch("/api/auth/login", { method: "POST", body: { email, senha } })
       .then((sessaoNova) => {
@@ -1468,19 +1470,48 @@ export function AppProvider({ children }) {
       })
       .catch((err) => {
         showToast(err instanceof ApiError ? err.message : "E-mail ou senha inválidos");
-        return false;
+        return err instanceof ApiError && err.dados?.precisaVerificar ? "verificar" : false;
       });
   }
   function cadastro(nome, email, senha) {
     return apiFetch("/api/auth/cadastro", { method: "POST", body: { nome, email, senha } })
-      .then((sessaoNova) => {
-        setSessao(sessaoNova);
+      .then((resp) => {
+        if (resp.precisaVerificar) {
+          showToast(`Enviamos um código para ${email}`);
+          return "verificar";
+        }
+        setSessao(resp);
         recarregarPedidos();
         showToast(`Conta criada! Bem-vindo(a), ${nome.split(" ")[0]}!`);
         return true;
       })
       .catch((err) => {
         showToast(err instanceof ApiError ? err.message : "Não foi possível criar a conta");
+        return false;
+      });
+  }
+  // Confirma o e-mail com o código recebido; já deixa a pessoa logada.
+  function confirmarEmail(email, codigo) {
+    return apiFetch("/api/auth/verificar-email", { method: "POST", body: { email, codigo } })
+      .then((sessaoNova) => {
+        setSessao(sessaoNova);
+        recarregarPedidos();
+        showToast(`E-mail confirmado! Bem-vindo(a), ${sessaoNova.nome.split(" ")[0]}!`);
+        return true;
+      })
+      .catch((err) => {
+        showToast(err instanceof ApiError ? err.message : "Não foi possível confirmar o e-mail");
+        return false;
+      });
+  }
+  function reenviarCodigoEmail(email) {
+    return apiFetch("/api/auth/reenviar-codigo", { method: "POST", body: { email } })
+      .then(() => {
+        showToast("Se o e-mail estiver pendente de confirmação, enviamos um novo código");
+        return true;
+      })
+      .catch((err) => {
+        showToast(err.message);
         return false;
       });
   }
@@ -1496,10 +1527,16 @@ export function AppProvider({ children }) {
     showToast("Você saiu da sua conta");
   }
   function verificarEmailCadastrado(email) {
+    // Resolve "email" (código foi pra caixa de entrada), "log" (modo desenvolvimento:
+    // o código sai no log do servidor) ou false (erro). Os dois primeiros são truthy.
     return apiFetch("/api/auth/recuperar", { method: "POST", body: { email } })
-      .then(() => {
-        showToast("Se a conta existir, enviamos um código (simulado)");
-        return true;
+      .then((resp) => {
+        showToast(
+          resp.via === "email"
+            ? "Se a conta existir, enviamos um código para o e-mail"
+            : "Se a conta existir, o código saiu no log do servidor (modo desenvolvimento)",
+        );
+        return resp.via || "log";
       })
       .catch((err) => {
         showToast(err.message);
@@ -1900,6 +1937,8 @@ export function AppProvider({ children }) {
     continuarComoVisitante,
     sair,
     verificarEmailCadastrado,
+    confirmarEmail,
+    reenviarCodigoEmail,
     redefinirSenha,
     // indique um amigo
     codigoIndicacaoAtual,
