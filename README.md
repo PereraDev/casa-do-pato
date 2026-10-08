@@ -148,7 +148,7 @@ npm run dev:all
 
 No painel, entre com o e-mail e a senha do administrador criado no passo anterior. Depois, a aba **Funcionários** permite cadastrar a equipe, criar funções e escolher quais seções cada pessoa acessa.
 
-Para recuperar senha de cliente, o código de 6 dígitos aparece no **console do servidor** (não há envio de e-mail real).
+Para recuperar senha de cliente, o código de 6 dígitos aparece no **console do servidor** (no Render, em **Logs**, procure por `recuperar senha`). Não há envio de e-mail real.
 
 ### Outros comandos
 

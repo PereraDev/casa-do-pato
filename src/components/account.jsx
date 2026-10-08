@@ -425,7 +425,12 @@ function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
       showToast("As senhas não coincidem");
       return;
     }
-    if (await redefinirSenha(email, valorReal(form, "recCodigo", "").trim(), senha)) {
+    const codigo = valorReal(form, "recCodigo", "").trim();
+    if (!/^[0-9]{6}$/.test(codigo)) {
+      showToast("Digite o código de 6 dígitos (só números)");
+      return;
+    }
+    if (await redefinirSenha(email, codigo, senha)) {
       setEtapa("email");
       setAba("entrar");
     }
@@ -440,19 +445,39 @@ function RecuperarSenha({ etapa, setEtapa, email, setEmail, setAba, voltar }) {
         <>
           <h3>Nova senha</h3>
           <p className="conta-hint">
-            Código de 6 dígitos "enviado" para {email} (protótipo: aparece no console do
+            Código de 6 dígitos "enviado" para {email} (protótipo: aparece nos logs do
             servidor, válido por 15 min) — digite-o e defina sua nova senha.
           </p>
           <form className="conta-form" onSubmit={onSubmitNovaSenha}>
+            {/* Campo de usuário invisível: sem ele o navegador (principalmente no celular)
+                trata o 1º campo de texto do formulário como "usuário" e preenche o e-mail
+                no campo do código. Com o usuário explícito, ele deixa o código em paz. */}
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={email}
+              readOnly
+              tabIndex={-1}
+              aria-hidden="true"
+              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+            />
             <div>
               <label htmlFor="recCodigo">Código de recuperação</label>
               <input
                 id="recCodigo"
+                name="codigo"
                 type="text"
                 inputMode="numeric"
+                pattern="[0-9]*"
                 maxLength={6}
                 placeholder="000000"
                 autoComplete="one-time-code"
+                defaultValue=""
+                // última barreira: se o navegador preencher algo que não é número, limpa
+                onFocus={(e) => {
+                  if (/[^0-9]/.test(e.target.value)) e.target.value = "";
+                }}
                 required
               />
             </div>
