@@ -7,6 +7,7 @@ import socketsPlugin from "./plugins/sockets.js";
 import staticFrontendPlugin from "./plugins/staticFrontend.js";
 import authRoutes from "./routes/auth.js";
 import comprasRoutes from "./routes/compras.js";
+import equipeRoutes from "./routes/equipe.js";
 import estoqueRoutes from "./routes/estoque.js";
 import financeiroRoutes from "./routes/financeiro.js";
 import garcomRoutes from "./routes/garcom.js";
@@ -54,6 +55,7 @@ export async function buildApp() {
   await fastify.register(estoqueRoutes);
   await fastify.register(comprasRoutes);
   await fastify.register(financeiroRoutes);
+  await fastify.register(equipeRoutes);
 
   // Em dev, o Vite serve o front (React + admin.html) e faz proxy de /api e
   // /socket.io pra este servidor — ver vite.config.js. Em produção não há

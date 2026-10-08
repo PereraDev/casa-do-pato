@@ -13,20 +13,20 @@ export default fp(async function socketsPlugin(fastify) {
   });
 
   // A room "admin" recebe pedido com e-mail/endereço de cliente — só entra
-  // quem tem a sessão de admin (mesmo cookie das rotas REST, vem no handshake).
-  function ehAdmin(socket) {
+  // quem tem sessão de funcionário válida (mesmo cookie das rotas REST, vem no handshake).
+  async function ehAdmin(socket) {
     const bruto = /(?:^|;\s*)tnm_sessao=([^;]+)/.exec(socket.handshake.headers.cookie || "")?.[1];
     if (!bruto) return false;
     try {
-      return fastify.sessaoAdminValida(fastify.decodeSecureSession(decodeURIComponent(bruto)));
+      return !!(await fastify.funcionarioDaSessao(fastify.decodeSecureSession(decodeURIComponent(bruto))));
     } catch {
       return false;
     }
   }
 
   io.on("connection", (socket) => {
-    socket.on("admin:entrar", () => {
-      if (ehAdmin(socket)) socket.join("admin");
+    socket.on("admin:entrar", async () => {
+      if (await ehAdmin(socket)) socket.join("admin");
     });
     socket.on("admin:sair", () => socket.leave("admin"));
     socket.on("grupo:entrar-sala", (codigo) => {

@@ -57,9 +57,11 @@ npm run lint
 
 Antes da 1ª vez, configure `server/.env` (copie de `server/.env.example`) com
 um `DATABASE_URL` de um Postgres (ex.: projeto gratuito no
-[neon.tech](https://neon.tech)) e um `ADMIN_TOKEN` (mín. 16 caracteres; o login do admin pede essa chave) e um `SESSION_SECRET` de 32 bytes em hex
+[neon.tech](https://neon.tech)) e um `SESSION_SECRET` de 32 bytes em hex
 (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`),
-depois rode as migrations: `cd server && npm install && npm run prisma:migrate`.
+depois rode as migrations: `cd server && npm install && npm run prisma:migrate`, e crie o 1º
+administrador do painel: `npm run admin:criar` (pergunta nome, e-mail e senha; em produção,
+`DATABASE_URL="..." npm run admin:criar` apontando pro banco de lá).
 Opcional: `GEMINI_API_KEY` (grátis em [aistudio.google.com/apikey](https://aistudio.google.com/apikey))
 pra ligar a busca por IA do cardápio — sem ela, a busca cai de volta pro
 filtro de texto comum (ver "Busca por IA no cardápio" abaixo).
@@ -217,10 +219,7 @@ administrativo"): `tnm_admin_menu_overrides`, `tnm_admin_menu_extra`
 aba Adicionais Globais), `tnm_fidelidade` (extrato de pontos/cashback por
 conta), `tnm_admin_fidelidade_config` (config do clube, editada só pelo
 admin), `tnm_admin_caixas` (abertura/fechamento de caixa do PDV, só existe
-no admin), `tnm_admin_funcionarios`
-(login/senha/função da equipe do admin — sem equivalente nem leitura do
-lado do cliente, ver "Integração com o painel administrativo"),
-`tnm_admin_config_loja` (nome da loja, horário de funcionamento, taxa de
+no admin), `tnm_admin_config_loja` (nome da loja, horário de funcionamento, taxa de
 entrega e tempo médio de preparo — só existe no admin, usada no PDV).
 
 ### Funcionalidades cobertas pelo Context
@@ -468,8 +467,8 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   vivem numa tabela `User` no Postgres (`server/`), com senha em hash
   **bcrypt cost 12** (via `bcryptjs`, sem precisar compilar binário nativo)
   — não é mais texto puro como era antes (isso continua valendo só pro
-  cliente; `tnm_admin_funcionarios` no admin ainda é texto puro, ver
-  "Limitações conhecidas"). Cadastro e redefinição de senha exigem senha
+  cliente; a equipe do admin também tem hash bcrypt, em tabela própria, ver
+  "Segurança"). Cadastro e redefinição de senha exigem senha
   forte (`motivoSenhaFraca` em `server/src/lib/senha.js` — mín. 8
   caracteres, 1 letra, 1 número; servidor é sempre a fonte da verdade, o
   front só espelha a regra em `src/utils/utils.js` pra dar feedback antes
@@ -891,14 +890,22 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
 
 ## Segurança (`server/`)
 
-- **Admin**: `plugins/admin.js` — `POST /api/admin/login {token}` troca o
-  `ADMIN_TOKEN` do `.env` por `adminAte` (12h) na sessão cifrada.
-  `fastify.exigirAdmin` protege estoque/compras/financeiro (hook do plugin
+- **Admin**: contas de funcionário no Postgres (`Funcionario`/`Funcao`,
+  senha bcrypt, `lib/funcoes.js`). `plugins/admin.js` — `POST /api/admin/login
+  {usuario, senha}` (5/min) grava `adminAte` (12h) + `funcionarioId` na sessão
+  cifrada e devolve `{id,nome,usuario,funcao,secoesPermitidas}`; sem conta
+  existente o login gasta bcrypt do mesmo jeito (não revela se o usuário
+  existe). `exigirAdmin` (qualquer funcionário logado **que ainda exista** —
+  apagar a conta derruba o acesso na hora) e `exigirAdministrador` (função
+  `admin`, usada em `routes/equipe.js`: CRUD de funcionários e funções; ler
+  funções vale pra qualquer funcionário logado). Regras: não remove nem rebaixa
+  o último administrador, não apaga função em uso nem a `admin`, usuário único,
+  senha forte. `fastify.exigirAdmin` protege estoque/compras/financeiro (hook do plugin
   inteiro), `/api/auth/usuarios`, `/api/pedidos/{pdv,todos,:id/status,:id/cancelar}`
   e `/api/garcom/chamadas{,/pendentes,/:id/atender}`. A room de socket `admin`
-  só aceita `admin:entrar` com essa sessão (cookie lido no handshake,
-  `sockets.js`); `admin:sair` sai dela. No `admin.html` o login pede a chave
-  além de usuário/senha.
+  só aceita `admin:entrar` com sessão de funcionário válida (cookie lido no
+  handshake, `sockets.js`); `admin:sair` sai dela. No `admin.html` o login é
+  só usuário e senha.
 - **Rate limit** (`@fastify/rate-limit`): 300/min global; 10/min em login/
   cadastro/recuperar/redefinir e na busca por IA; 5/min no login admin;
   20/min em `POST /api/pedidos`; 30/min nas rotas de entrar/ler grupo.
@@ -1037,15 +1044,17 @@ chama `renderDashboard` de `desempenho.js`, que por sua vez chama `goTo` de
 de corpo de função (handler de clique, callback de socket), nunca no topo
 do módulo.
 
-Login do admin é validado contra `tnm_admin_funcionarios` (nome, usuário,
-senha em texto puro e função) — continua sem hash porque é só o painel
-interno, sem relação com contas de cliente (essas sim têm senha em bcrypt
-agora, ver "Back-end (`server/`)" acima). Sem cadastro nenhum, essa chave
-nasce com 1 registro seed (`admin@casadopato.com` / `senha123`, função
-`admin`, pré-preenchidos no formulário).
+Login do admin é validado **no servidor** (`POST /api/admin/login`, ver
+"Segurança"): a equipe mora nas tabelas `Funcionario`/`Funcao` do Postgres,
+com senha em bcrypt — sem relação com as contas de cliente (`User`). Não existe
+conta padrão: o 1º administrador é criado por `npm run admin:criar` (também
+semeia as 4 funções padrão). Ao entrar, o painel apaga do `localStorage` as
+chaves antigas `tnm_admin_funcionarios`/`tnm_admin_funcoes` (versões anteriores
+guardavam a equipe lá, com senha em texto puro).
 
-**Funções são editáveis, não mais uma lista fixa**: `tnm_admin_funcoes`
-guarda a lista de funções (`getFuncoes()`/`saveFuncoes()`), com 4 padrão
+**Funções são editáveis, não mais uma lista fixa**: a tabela `Funcao`
+(cache `state.funcoesCache`, lido por `getFuncoes()`; escrita por
+`api("/api/admin/funcoes")`), com 4 padrão
 (`admin`/`cozinha`/`pdv`/`garcom`, seed em `FUNCOES_PADRAO`) mais quantas o
 `admin` criar na aba "Funcionários" (formulário "Nova função" — só o
 nome; a função nova nasce com `secoesPadrao: []`, sem acesso nenhum até
@@ -1151,10 +1160,7 @@ localStorage compartilhado:
   clube — só o admin edita, o cliente só lê; inclui o campo opcional
   `foto` de cada recompensa).
 - **Só existe no admin** (sem equivalente no cliente): `tnm_admin_caixas`
-  (sessões de caixa do PDV), `tnm_admin_funcionarios` (login/senha/função de
-  quem acessa o painel — ver seção "Funcionários" abaixo),
-  `tnm_admin_funcoes` (lista de funções disponíveis, editável — ver "Login
-  do admin"), `tnm_admin_config_loja` (nome, horário, taxa de entrega,
+  (sessões de caixa do PDV), `tnm_admin_config_loja` (nome, horário, taxa de entrega,
   tempo médio de preparo — ver "Configurações" abaixo).
 
 ### Seções do admin
@@ -1320,8 +1326,8 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   tem relação com login — é uma lista à parte (`state.employees`, só em
   memória), não confundir com a aba Funcionários abaixo.
 - **Funcionários**: só visível pra quem logou como `admin`. Duas partes —
-  "Funções" (CRUD das funções disponíveis, `tnm_admin_funcoes`) e
-  "Cadastrar funcionário" (registros de `tnm_admin_funcionarios`: nome,
+  "Funções" (CRUD da tabela `Funcao`) e
+  "Cadastrar funcionário" (tabela `Funcionario`, via `/api/admin/funcionarios`: nome,
   usuário, senha, função e o checklist "Onde pode acessar", agrupado por
   seção do menu). É o que decide quem consegue logar no painel e o que
   cada um vê — ver "Login do admin" acima pro detalhe de como função e
@@ -1357,8 +1363,8 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
 - **ERP**: baixa de estoque por venda só considera o prato principal
   (adicionais não têm ficha técnica própria); recebimento de compra é
   tudo-ou-nada (sem recebimento parcial); `ContaReceber` é só pra
-  recebíveis avulsos, não ligados a pedido; rotas protegidas só pela
-  chave única do admin (ver "Segurança");
+  recebíveis avulsos, não ligados a pedido; rotas protegidas só por sessão
+  de funcionário (ver "Segurança");
   disponibilidade de prato pro cliente React continua 100% baseada no
   `dish.estoque` de hoje, não integrada ao novo estoque de insumo.
 - **Carteira**: o PIN protege contra alguém folheando a UI, mas não é uma
@@ -1385,15 +1391,15 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
 - Reserva de mesa (`account.jsx#ReservaMesaSheet`) só guarda o pedido de reserva —
   não bloqueia mesa nenhuma de verdade nem avisa a equipe (sem contraparte
   no admin), é só uma lista pro próprio cliente ver o que já reservou.
-- Senha de conta de cliente é hash bcrypt (cost 12) no Postgres, com
-  validação de senha forte — mas `tnm_admin_funcionarios` (login do painel
-  admin) continua texto puro no `localStorage`, sem relação com contas de
-  cliente.
-- **Admin protegido por uma chave única** (`ADMIN_TOKEN`, ver "Segurança"
-  abaixo): fecha as rotas e a room de socket do admin pra quem está fora do
-  painel, mas é chave compartilhada — não há conta de funcionário nem
-  permissão por rota no servidor (função/seções continuam decididas só no
-  `admin.html`, client-side). Upgrade natural: tabela `Employee` com bcrypt.
+- **Permissão por seção só no painel**: o servidor distingue só 2 níveis
+  (funcionário logado × função `admin`, que gere a equipe); quais seções cada
+  pessoa vê é decidido no `admin.html` (client-side), então um funcionário
+  logado que chame a API direto alcança rotas de outras seções (ex.: garçom
+  chamando `/api/estoque`). Upgrade: mapear rota → seção no servidor.
+- Sessão de admin dura 12h e não há "esqueci minha senha" do painel: o
+  administrador redefine a de alguém na aba Funcionários, e quem perdeu o
+  acesso total roda `npm run admin:criar` de novo (redefine a senha do e-mail
+  informado).
 - `POST /api/pedidos` valida formato/limites (itens, qtd, tamanho de texto,
   tipo) mas **continua confiando em `total`/`cupom`/`cashbackUsado`
   vindos do cliente** — o catálogo mora no front, então o servidor não

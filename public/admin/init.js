@@ -4,7 +4,7 @@
 // antes ficavam soltos no fim do script único (login/logout, hambúrguer
 // do menu mobile, busca do rail).
 import {
-  state, api, socket, esc, initials, funcaoLabel, autenticarFuncionario, secoesPermitidas,
+  state, api, socket, esc, initials, funcaoLabel, secoesPermitidas, carregarFuncoesCache, carregarFuncionariosCache,
   carregarCachesEmTempoReal, carregarUsuariosCache, carregarErpCache, initSocket
 } from "./core.js";
 import { buildShell, buildFilters, buildNav, goTo, renderAll, rerenderRelogio, openRail, closeRail, aplicarFiltroRail } from "./nav.js";
@@ -54,24 +54,27 @@ document.getElementById("railSearch").addEventListener("input", aplicarFiltroRai
 
 document.getElementById("loginForm").addEventListener("submit", function (e) {
   e.preventDefault();
-  var usuario = document.getElementById("loginUser").value;
-  var senha = document.getElementById("loginPass").value;
-  var funcionario = autenticarFuncionario(usuario, senha);
   var erro = document.getElementById("loginError");
-  if (!funcionario) {
-    erro.textContent = "Usuário ou senha inválidos.";
-    erro.style.display = "";
-    return;
-  }
-  // 2º fator: o servidor só libera as rotas do admin (REST e socket) com a
-  // chave do .env — usuário/senha acima continuam só decidindo função/seções.
-  api("/api/admin/login", { method: "POST", body: { token: document.getElementById("loginToken").value } }).then(function () {
-    erro.style.display = "none";
+  var corpo = {
+    usuario: document.getElementById("loginUser").value,
+    senha: document.getElementById("loginPass").value
+  };
+  // Conta no servidor (senha com bcrypt): a resposta já traz função e seções do
+  // funcionário. Funções e equipe carregam antes do init() porque o menu e as
+  // seções permitidas dependem delas.
+  api("/api/admin/login", { method: "POST", body: corpo }).then(function (funcionario) {
     state.usuarioLogado = funcionario;
+    // Limpeza: versões antigas guardavam a equipe (com senha em texto puro) aqui.
+    try { localStorage.removeItem("tnm_admin_funcionarios"); localStorage.removeItem("tnm_admin_funcoes"); } catch {}
+    return Promise.all([carregarFuncoesCache(), carregarFuncionariosCache()]);
+  }).then(function () {
+    erro.style.display = "none";
+    document.getElementById("loginPass").value = "";
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("app").style.display = "";
     init();
   }).catch(function (err) {
+    state.usuarioLogado = null;
     erro.textContent = err.message;
     erro.style.display = "";
   });
@@ -81,6 +84,8 @@ document.getElementById("logoutBtn").addEventListener("click", function () {
   socket.emit("admin:sair");
   api("/api/admin/logout", { method: "POST" }).catch(function () {});
   state.usuarioLogado = null;
+  state.funcoesCache = [];
+  state.funcionariosCache = [];
   document.getElementById("app").style.display = "none";
   document.getElementById("login-screen").style.display = "flex";
 });

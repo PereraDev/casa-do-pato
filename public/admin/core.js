@@ -277,65 +277,28 @@ export function atenderChamada(id) {
   api("/api/garcom/chamadas/" + id + "/atender", { method: "PATCH", body: { funcionario: quem } }).catch(function () {});
 }
 
-/* ---- Funções do painel (tnm_admin_funcoes) — antes era uma lista fixa
-   (admin/cozinha/pdv/garcom, cada uma com um conjunto fixo de seções via
-   ROLE_SECOES); agora é editável na aba Funcionários: dá pra criar uma
-   função nova ou apagar uma que não esteja mais em uso por ninguém.
-   Cada função carrega um conjunto PADRÃO de seções liberadas
-   (`secoesPadrao`), usado só pra pré-marcar o checklist ao cadastrar
-   alguém com essa função — o funcionário em si pode ter
+/* ---- Funções e funcionários do painel — migraram pro back-end (tabelas
+   Funcao/Funcionario, senha com bcrypt; ver CLAUDE.md, "Segurança"). Mesmo
+   padrão dos pedidos: getX() continua SÍNCRONA, lendo de um cache em memória
+   (state.funcoesCache/funcionariosCache) populado no login. Cada função tem um
+   conjunto PADRÃO de seções (`secoesPadrao`); o funcionário pode ter
    `secoesPermitidas` próprias que sobrescrevem esse padrão (ver
-   secoesPermitidas() abaixo). "admin" sempre enxerga tudo
-   (secoesPadrao: null) e não pode ser editada/apagada. */
-export var FUNCOES_PADRAO = [
-  { id: "admin", label: "Administrador", secoesPadrao: null },
-  { id: "cozinha", label: "Cozinha", secoesPadrao: ["cozinha"] },
-  { id: "pdv", label: "PDV", secoesPadrao: ["pdv"] },
-  { id: "garcom", label: "Garçom", secoesPadrao: ["mesas"] },
-];
-export function getFuncoes() {
-  var lista = lsGet("tnm_admin_funcoes", null);
-  if (!lista) {
-    lista = FUNCOES_PADRAO;
-    lsSet("tnm_admin_funcoes", lista);
-  }
-  return lista;
+   secoesPermitidas() abaixo). "admin" sempre enxerga tudo e não pode ser
+   editada/apagada. Só funcionário "admin" consegue ler a lista de
+   funcionários; funções qualquer funcionário logado lê. ---- */
+export function getFuncoes() { return state.funcoesCache; }
+export function getFuncionarios() { return state.funcionariosCache; }
+export function carregarFuncoesCache() {
+  return api("/api/admin/funcoes").then(function (lista) { state.funcoesCache = lista; });
 }
-export function saveFuncoes(lista) { lsSet("tnm_admin_funcoes", lista); }
+export function carregarFuncionariosCache() {
+  return api("/api/admin/funcionarios")
+    .then(function (lista) { state.funcionariosCache = lista; })
+    .catch(function () { state.funcionariosCache = []; }); // 403 pra quem não é admin
+}
 export function funcaoLabel(id) {
   var f = getFuncoes().filter(function (x) { return x.id === id; })[0];
   return f ? f.label : id;
-}
-
-/* ---- Funcionários do painel (tnm_admin_funcionarios) ----
-   Login/senha + função de cada membro da equipe com acesso ao admin.
-   `secoesPermitidas` (opcional, array de chaves de SECTIONS) sobrescreve
-   o padrão da função pra ESSE funcionário específico — cadastrado na
-   hora de criar/editar (ver renderFuncionarios); sem isso, cai no
-   secoesPadrao da função. Sem equivalente no cliente: só existe pra
-   controlar o próprio painel. */
-export function getFuncionarios() {
-  var lista = lsGet("tnm_admin_funcionarios", null);
-  if (!lista) {
-    lista = [{id:"f-admin", nome:"Administrador", usuario:"admin@casadopato.com", senha:"senha123", funcao:"admin"}];
-    lsSet("tnm_admin_funcionarios", lista);
-  }
-  // Migração única da troca de nome (Tá na Mesa → Casa do Pato): logins já
-  // salvos neste navegador com o domínio antigo passam pro novo.
-  if (lista.some(function (f) { return /@tanamesa\.com$/i.test(f.usuario); })) {
-    lista = lista.map(function (f) {
-      return Object.assign({}, f, {usuario: f.usuario.replace(/@tanamesa\.com$/i, "@casadopato.com")});
-    });
-    lsSet("tnm_admin_funcionarios", lista);
-  }
-  return lista;
-}
-export function saveFuncionarios(lista) { lsSet("tnm_admin_funcionarios", lista); }
-export function autenticarFuncionario(usuario, senha) {
-  usuario = (usuario || "").trim().toLowerCase();
-  return getFuncionarios().filter(function (f) {
-    return f.usuario.toLowerCase() === usuario && f.senha === senha;
-  })[0] || null;
 }
 // Aceita o funcionário inteiro (respeita secoesPermitidas próprias, se
 // cadastradas) ou só o id da função (cai no padrão dela) — ver chamadas
@@ -660,6 +623,8 @@ export var state = {
   reviewFilter: 0,
   usuarioLogado: null,
   funcionarios: { editandoId: null },
+  funcoesCache: [],
+  funcionariosCache: [],
 
   // Cache em memória dos pedidos e chamados de garçom (agora vêm do
   // back-end, server/) — populado no init() e mantido em dia por eventos

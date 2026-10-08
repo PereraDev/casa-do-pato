@@ -38,9 +38,9 @@ model Order {
   user         User?   @relation(fields: [userId], references: [id])
   guestId      String? // identidade de visitante, emitida pela sessão (ver plugins/session.js)
 
-  total   Decimal @db.Decimal(10, 2)
-  tipo    String // balcao | mesa | entrega
-  mesa    String?
+  total    Decimal @db.Decimal(10, 2)
+  tipo     String // balcao | mesa | entrega
+  mesa     String?
   endereco String?
 
   origem      String? // "pdv" | null (= cliente via QR)
@@ -246,4 +246,25 @@ model ContaReceber {
   criadoEm    DateTime  @default(now())
 
   @@index([vencimento])
+}
+
+// Equipe com acesso ao painel admin — substitui o login por chave única
+// (ADMIN_TOKEN) e o antigo tnm_admin_funcionarios do localStorage (senha em
+// texto puro). `funcao` é o id de uma Funcao (sem FK de propósito: apagar
+// função em uso é bloqueado na rota, e o seed das 4 padrão vive em
+// lib/funcoes.js). `secoesPermitidas` null = usa o padrão da função.
+model Funcionario {
+  id               String   @id @default(cuid())
+  nome             String
+  usuario          String   @unique // sempre minúsculo
+  senhaHash        String
+  funcao           String
+  secoesPermitidas Json?
+  criadoEm         DateTime @default(now())
+}
+
+model Funcao {
+  id           String @id
+  label        String
+  secoesPadrao Json? // null só pra "admin" (vê tudo)
 }

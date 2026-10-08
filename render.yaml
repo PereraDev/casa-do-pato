@@ -1,7 +1,8 @@
 # Blueprint do Render: um único serviço web Node que serve tudo (API, Socket.IO,
 # app React e painel admin) — mesma arquitetura do `npm run dev:all`, em 1 processo.
 # Os segredos NÃO ficam aqui: DATABASE_URL, SESSION_SECRET e GEMINI_API_KEY são
-# preenchidos no painel do Render (sync: false); ADMIN_TOKEN é gerado pelo Render.
+# preenchidos no painel do Render (sync: false). O 1º administrador do painel é criado
+# por `npm run admin:criar` apontando pro banco (ver README), não por variável de ambiente.
 services:
   - type: web
     name: casa-do-pato
@@ -22,7 +23,5 @@ services:
         sync: false
       - key: SESSION_SECRET
         sync: false
-      - key: ADMIN_TOKEN
-        generateValue: true
       - key: GEMINI_API_KEY
         sync: false

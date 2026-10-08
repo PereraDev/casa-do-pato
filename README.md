@@ -109,11 +109,10 @@ cp server/.env.example server/.env
 |---|---|
 | `DATABASE_URL` | String de conexão do PostgreSQL |
 | `SESSION_SECRET` | Chave de 32 bytes em hexadecimal para a sessão |
-| `ADMIN_TOKEN` | Chave de acesso ao painel admin (mínimo 16 caracteres) |
 | `PORT` | Porta da API (padrão `4000`) |
 | `GEMINI_API_KEY` | Opcional. Liga a busca por IA; sem ela, a busca usa filtro de texto |
 
-Gere os valores de `SESSION_SECRET` e `ADMIN_TOKEN` com:
+Gere o valor de `SESSION_SECRET` com:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -123,6 +122,12 @@ Depois crie as tabelas no banco:
 
 ```bash
 cd server && npm run prisma:migrate && cd ..
+```
+
+Crie o primeiro **administrador do painel** (o comando pergunta nome, e-mail de login e senha, e grava no banco com hash bcrypt):
+
+```bash
+cd server && npm run admin:criar && cd ..
 ```
 
 Opcional: crie uma conta de cliente de demonstração (`demo@casadopato.com`, senha `senha123`):
@@ -141,7 +146,7 @@ npm run dev:all
 - Painel administrativo: http://localhost:5173/admin.html
 - API: http://localhost:4000
 
-No painel, entre com `admin@casadopato.com` e a senha `senha123` e informe a **chave do servidor** (o `ADMIN_TOKEN` do seu `.env`).
+No painel, entre com o e-mail e a senha do administrador criado no passo anterior. Depois, a aba **Funcionários** permite cadastrar a equipe, criar funções e escolher quais seções cada pessoa acessa.
 
 Para recuperar senha de cliente, o código de 6 dígitos aparece no **console do servidor** (não há envio de e-mail real).
 
@@ -167,8 +172,14 @@ O projeto precisa de um servidor Node que fique ligado (Socket.IO usa conexões 
    - `DATABASE_URL`: a string do passo 1.
    - `SESSION_SECRET`: 64 caracteres hexadecimais (gere com o comando de `node -e` da seção Configuração). **Use um valor novo**, diferente do seu `.env` local.
    - `GEMINI_API_KEY`: opcional.
-4. Ao terminar o deploy, o `ADMIN_TOKEN` fica em **Environment** do serviço (o Render o gera sozinho). Ele é a chave pedida no login do painel.
-5. Acesse `https://<nome-do-servico>.onrender.com` e `/admin.html`.
+4. Quando o deploy ficar **Live**, crie o administrador do site publicado, **no seu computador**, apontando para o banco de produção (nada é digitado no painel do Render):
+
+   ```bash
+   cd server
+   DATABASE_URL="<a mesma string do passo 1>" npm run admin:criar
+   ```
+
+5. Acesse `https://<nome-do-servico>.onrender.com` e `/admin.html` e entre com essa conta.
 
 No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o primeiro acesso seguinte demora cerca de 1 minuto. Abra o site antes de uma apresentação. Em produção, o código de recuperação de senha aparece nos **Logs** do serviço no Render.
 
@@ -188,7 +199,7 @@ Este é um protótipo acadêmico. Em especial:
 
 - **Pagamentos simulados:** Pix, cartão e dinheiro não passam por gateway. O código "Pix copia e cola" não é um payload válido.
 - **Preço do pedido vem do cliente:** o cardápio mora no front-end, então o servidor valida formato e limites, mas não recalcula o total.
-- **Painel com chave única:** o acesso ao admin usa uma chave compartilhada; as contas de funcionário e suas permissões ficam no `localStorage` do navegador.
+- **Permissão por seção só no painel:** as contas de funcionário ficam no banco (senha com bcrypt) e a gestão da equipe exige função Administrador no servidor, mas quais seções cada pessoa vê é decidido pelo painel; no servidor, qualquer funcionário logado alcança as rotas operacionais.
 - **Sem e-mail real:** a recuperação de senha mostra o código no console do servidor.
 - **Recibo do PDV não fiscal.**
 - As imagens do cardápio são placeholders do Unsplash.

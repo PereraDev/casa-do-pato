@@ -3,7 +3,7 @@ import {
   state, esc, brl, initials, SECTIONS,
   getUsuarios,
   getConfigFidelidade, getContaFidelidade, getNivelFid, saldoPontosFid, saveConfigFidelidade, ajusteManualFidelidade,
-  getFuncionarios, getFuncoes, funcaoLabel, saveFuncionarios, saveFuncoes, secoesPermitidas
+  getFuncionarios, getFuncoes, funcaoLabel, secoesPermitidas, api, carregarFuncoesCache, carregarFuncionariosCache
 } from "./core.js";
 
 /* ============ CLIENTES ============
@@ -243,6 +243,15 @@ function renderChecklistSecoes(marcadas) {
       + '</div>';
   }).join("");
 }
+// Toda mutação de equipe/função vai pro servidor; depois recarrega os 2 caches
+// e redesenha. Erro do servidor (usuário duplicado, último admin, função em
+// uso, senha fraca...) aparece como alerta, igual às outras abas do painel.
+function salvarEquipe(requisicao, aoSucesso) {
+  requisicao
+    .then(function () { if (aoSucesso) aoSucesso(); return Promise.all([carregarFuncoesCache(), carregarFuncionariosCache()]); })
+    .then(renderFuncionarios)
+    .catch(function (err) { alert(err.message); });
+}
 export function renderFuncionarios() {
   var lista = getFuncionarios();
   var funcoes = getFuncoes();
@@ -332,15 +341,8 @@ export function renderFuncionarios() {
   document.querySelectorAll(".remover-func").forEach(function (b) {
     b.addEventListener("click", function () {
       var id = b.getAttribute("data-id");
-      var atual = getFuncionarios();
-      var alvo = atual.filter(function (f) { return f.id === id; })[0];
-      var totalAdmins = atual.filter(function (f) { return f.funcao === "admin"; }).length;
-      if (alvo && alvo.funcao === "admin" && totalAdmins <= 1) {
-        alert("Não é possível remover o último administrador do painel.");
-        return;
-      }
-      saveFuncionarios(atual.filter(function (f) { return f.id !== id; }));
-      renderFuncionarios();
+      // o servidor também barra remover o último administrador
+      salvarEquipe(api("/api/admin/funcionarios/" + encodeURIComponent(id), { method: "DELETE" }));
     });
   });
   // Trocar a função re-sugere o checklist de acesso (ou some com ele, se
@@ -359,30 +361,12 @@ export function renderFuncionarios() {
     var nomeInput = document.getElementById("novaFuncaoNome");
     var nome = nomeInput.value.trim();
     if (!nome) return;
-    // Mesmo jeito de tirar acento sem regex Unicode direto no código-fonte
-    // que renderCategorias já usa (compatibilidade de encoding do arquivo).
-    var semAcento = nome.toLowerCase().normalize("NFD");
-    var semDiacriticos = "";
-    for (var fi = 0; fi < semAcento.length; fi++) {
-      var codeFi = semAcento.charCodeAt(fi);
-      if (codeFi < 0x0300 || codeFi > 0x036f) semDiacriticos += semAcento[fi];
-    }
-    var slugFuncao = semDiacriticos.replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    var id = "fn-" + (slugFuncao || Date.now()) + "-" + Date.now().toString(36);
-    var atuais = getFuncoes();
-    if (atuais.some(function (f) { return f.label.toLowerCase() === nome.toLowerCase(); })) {
-      alert("Já existe uma função com esse nome.");
-      return;
-    }
-    saveFuncoes(atuais.concat([{ id: id, label: nome, secoesPadrao: [] }]));
-    renderFuncionarios();
+    salvarEquipe(api("/api/admin/funcoes", { method: "POST", body: { label: nome } }));
   });
   document.querySelectorAll(".funcao-remover").forEach(function (b) {
     b.addEventListener("click", function () {
       if (b.disabled) return;
-      var id = b.getAttribute("data-id");
-      saveFuncoes(getFuncoes().filter(function (f) { return f.id !== id; }));
-      renderFuncionarios();
+      salvarEquipe(api("/api/admin/funcoes/" + encodeURIComponent(b.getAttribute("data-id")), { method: "DELETE" }));
     });
   });
   document.getElementById("funcForm").addEventListener("submit", function (e) {
@@ -396,19 +380,15 @@ export function renderFuncionarios() {
     var secoesPermitidasEscolhidas = checklist
       ? [].slice.call(checklist.querySelectorAll("input:checked")).map(function (i) { return i.value; })
       : null; // null = admin, secoesPermitidas() já resolve pra "tudo"
-    var atual = getFuncionarios();
+    var corpo = {nome:nome, usuario:usuario, funcao:funcao, secoesPermitidas:secoesPermitidasEscolhidas};
+    if (senha) corpo.senha = senha;
     if (editando) {
-      saveFuncionarios(atual.map(function (f) {
-        return f.id === editando.id
-          ? Object.assign({}, f, {nome:nome, usuario:usuario, funcao:funcao, secoesPermitidas:secoesPermitidasEscolhidas}, senha ? {senha:senha} : {})
-          : f;
-      }));
-      state.funcionarios.editandoId = null;
+      salvarEquipe(api("/api/admin/funcionarios/" + encodeURIComponent(editando.id), { method: "PATCH", body: corpo }), function () {
+        state.funcionarios.editandoId = null;
+      });
     } else {
       if (!senha) return;
-      atual.push({id:"f-" + Date.now(), nome:nome, usuario:usuario, senha:senha, funcao:funcao, secoesPermitidas:secoesPermitidasEscolhidas});
-      saveFuncionarios(atual);
+      salvarEquipe(api("/api/admin/funcionarios", { method: "POST", body: corpo }));
     }
-    renderFuncionarios();
   });
 }

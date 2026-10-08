@@ -1,20 +1,28 @@
-// Socket.IO: só quem tem sessão de admin entra na room "admin" e recebe eventos dela.
+// Socket.IO: só quem tem sessão de funcionário entra na room "admin" e recebe eventos dela.
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { test } from "node:test";
 import { io as cliente } from "../../node_modules/socket.io-client/build/esm/index.js";
 import { buildApp } from "../src/app.js";
+import { garantirFuncoesPadrao } from "../src/lib/funcoes.js";
+import { hashSenha } from "../src/lib/senha.js";
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("room admin exige sessão de admin", async () => {
+test("room admin exige sessão de funcionário", async () => {
   const app = await buildApp();
   await app.listen({ port: 0, host: "127.0.0.1" });
   const base = `http://127.0.0.1:${app.server.address().port}`;
+  const usuario = `teste-socket-${crypto.randomBytes(3).toString("hex")}@teste.local`;
   try {
+    await garantirFuncoesPadrao(app.prisma);
+    await app.prisma.funcionario.create({
+      data: { nome: "Teste Socket", usuario, senhaHash: await hashSenha("Senha1234"), funcao: "garcom" },
+    });
     const login = await fetch(base + "/api/admin/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: process.env.ADMIN_TOKEN }),
+      body: JSON.stringify({ usuario, senha: "Senha1234" }),
     });
     assert.equal(login.status, 200);
     const cookie = login.headers.get("set-cookie").split(";")[0];
@@ -31,7 +39,7 @@ test("room admin exige sessão de admin", async () => {
     admin.on("teste", () => recebidos.admin++);
     anonimo.emit("admin:entrar");
     admin.emit("admin:entrar");
-    await espera(300);
+    await espera(500);
     app.io.to("admin").emit("teste", 1);
     await espera(300);
     assert.deepEqual(recebidos, { anonimo: 0, admin: 1 });
@@ -44,6 +52,7 @@ test("room admin exige sessão de admin", async () => {
     anonimo.close();
     admin.close();
   } finally {
+    await app.prisma.funcionario.deleteMany({ where: { usuario } });
     await app.close();
   }
 });

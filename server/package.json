@@ -11,6 +11,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed": "node --env-file=.env prisma/seed.js",
+    "admin:criar": "node --env-file-if-exists=.env scripts/criar-admin.js",
     "test": "node --env-file=.env --test test/seguranca.test.js test/socket-admin.test.js"
   },
   "dependencies": {

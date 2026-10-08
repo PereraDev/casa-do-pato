@@ -582,19 +582,15 @@
     <div class="login-sub">Painel administrativo</div>
     <div class="login-field">
       <label for="loginUser">Usuário</label>
-      <input id="loginUser" type="text" placeholder="admin@casadopato.com" value="admin@casadopato.com" autocomplete="username" required>
+      <input id="loginUser" type="text" placeholder="seu e-mail de acesso" autocomplete="username" required>
     </div>
     <div class="login-field">
       <label for="loginPass">Senha</label>
-      <input id="loginPass" type="password" placeholder="••••••••" value="senha123" autocomplete="current-password" required>
-    </div>
-    <div class="login-field">
-      <label for="loginToken">Chave do servidor</label>
-      <input id="loginToken" type="password" placeholder="ADMIN_TOKEN do server/.env" autocomplete="off" required>
+      <input id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" required>
     </div>
     <button type="submit" class="login-submit">Entrar</button>
     <div class="login-error" id="loginError" style="display:none;">Usuário ou senha inválidos.</div>
-    <div class="login-hint">Protótipo — cada login cai direto na sua função (cadastradas em "Funcionários"). Padrão: admin@casadopato.com / senha123.</div>
+    <div class="login-hint">Acesso da equipe. As contas são criadas por um administrador na aba "Funcionários" (o 1º administrador, pelo comando <code>npm run admin:criar</code>).</div>
   </form>
 </div>
 
