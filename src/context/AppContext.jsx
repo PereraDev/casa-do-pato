@@ -71,6 +71,14 @@ function mesmaPersonalizacao(addonsA, addonsB, removidosA, removidosB) {
   );
 }
 
+// Adiciona uma avaliação ao mapa itemId -> lista, sem duplicar: o autor recebe a própria
+// avaliação por 2 caminhos (resposta do POST e evento de socket), em qualquer ordem.
+function comAvaliacao(mapa, itemId, nova) {
+  const lista = mapa[itemId] || [];
+  const repetida = lista.some((r) => r.id === nova.id);
+  return repetida ? mapa : { ...mapa, [itemId]: [nova, ...lista] };
+}
+
 export function AppProvider({ children }) {
   /* ---------------- Carrinho + informações do pedido (persistidos) ------ */
   const [cart, setCart] = useLocalStorageState("tnm_cart", []);
@@ -224,10 +232,17 @@ export function AppProvider({ children }) {
   }, []);
 
   /* ---------------- Avaliações, favoritos, pedidos (persistidos) -------- */
-  const [reviewsUser, setReviewsUser] = useLocalStorageState(
-    "tnm_reviews_user",
-    {},
-  );
+  // Avaliações vêm do back-end (compartilhadas entre dispositivos): carga 1x no mount +
+  // evento de socket quando alguém avalia. Antes ficavam em localStorage (tnm_reviews_user).
+  const [reviewsUser, setReviewsUser] = useState({});
+  useEffect(() => {
+    apiFetch("/api/avaliacoes").then(setReviewsUser).catch(() => {});
+    function onNova({ itemId, avaliacao }) {
+      setReviewsUser((prev) => comAvaliacao(prev, itemId, avaliacao));
+    }
+    socket.on("avaliacao:nova", onNova);
+    return () => socket.off("avaliacao:nova", onNova);
+  }, []);
   const [favoritos, setFavoritos] = useLocalStorageState("tnm_favoritos", []);
   const [favoritosPersonalizados, setFavoritosPersonalizados] =
     useLocalStorageState("tnm_favoritos_personalizados", []);
@@ -274,7 +289,7 @@ export function AppProvider({ children }) {
   /* ---------------- Navegação / busca (transiente) ----------------------- */
   const [tabAtiva, setTabAtiva] = useState("inicio");
   const [termoBusca, setTermoBusca] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpenRaw] = useState(false);
   // Busca por IA (opt-in, um clique — nunca dispara sozinha a cada tecla):
   // manda a pergunta em linguagem livre + o catálogo pro back-end, que
   // devolve uma frase curta e os ids mais relevantes (ver
@@ -284,12 +299,13 @@ export function AppProvider({ children }) {
   const [iaResultado, setIaResultado] = useState(null);
   const [iaCarregando, setIaCarregando] = useState(false);
   const [iaErro, setIaErro] = useState(null);
+  // Devolve Promise<boolean> (true = a IA respondeu).
   function buscarComIA(pergunta) {
     const texto = pergunta.trim();
-    if (!texto) return;
+    if (!texto) return Promise.resolve(false);
     setIaCarregando(true);
     setIaErro(null);
-    apiFetch("/api/ia/busca", {
+    return apiFetch("/api/ia/busca", {
       method: "POST",
       body: {
         pergunta: texto,
@@ -303,15 +319,29 @@ export function AppProvider({ children }) {
         })),
       },
     })
-      .then((r) => setIaResultado(r))
-      .catch((err) =>
-        setIaErro(err.message || "Não foi possível buscar com IA agora, tente de novo."),
-      )
+      .then((r) => {
+        setIaResultado(r);
+        return true;
+      })
+      .catch((err) => {
+        setIaErro(err.message || "Não foi possível buscar com IA agora, tente de novo.");
+        return false;
+      })
       .finally(() => setIaCarregando(false));
   }
   function limparBuscaIA() {
     setIaResultado(null);
     setIaErro(null);
+  }
+  // Fechar a busca também limpa o termo e a resposta da IA — antes o filtro continuava
+  // valendo com o campo escondido e o cardápio parecia "quebrado" (vazio).
+  function setSearchOpen(v) {
+    const abrir = typeof v === "function" ? v(searchOpen) : v;
+    setSearchOpenRaw(abrir);
+    if (!abrir) {
+      setTermoBusca("");
+      limparBuscaIA();
+    }
   }
 
   /* ---------------- Ficha do produto aberto (transiente) ------------------ */
@@ -442,7 +472,7 @@ export function AppProvider({ children }) {
     clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(
       () => setToast((s) => ({ ...s, visible: false })),
-      2600,
+      Math.max(2600, msg.length * 70), // mensagem longa (ex.: erro do servidor) precisa de tempo pra ler
     );
   }
 
@@ -770,7 +800,7 @@ export function AppProvider({ children }) {
   }
 
   /* ---------------- Avaliações -------------------------------------------- */
-  // Mistura avaliações reais deste cliente (reviewsUser, localStorage) com
+  // Mistura avaliações reais (reviewsUser, vindas do back-end) com
   // as fictícias pré-cadastradas (REVIEWS_MOCK, data/data.js) — as do
   // usuário aparecem primeiro (mais recentes no topo).
   function getReviews(itemId) {
@@ -789,26 +819,25 @@ export function AppProvider({ children }) {
   // Grava uma nova avaliação (com foto opcional, ver product.jsx#Reviews) e,
   // se essa avaliação veio do fluxo "Avaliar pedido" (pedidoAvaliandoId
   // setado por avaliarPedido), marca o pedido como já avaliado no histórico.
+  // Devolve Promise<boolean> (true = gravou) pro formulário só limpar quando deu certo.
   function enviarAvaliacao(itemId, estrelas, comentario, foto) {
-    const nova = {
-      autor: nomeExibicao(),
-      estrelas,
-      comentario,
-      foto: foto || undefined,
-      data: new Date().toISOString().slice(0, 10),
-    };
-    setReviewsUser((prev) => ({
-      ...prev,
-      [itemId]: [nova, ...(prev[itemId] || [])],
-    }));
-    if (pedidoAvaliandoId) {
-      const pid = pedidoAvaliandoId;
-      setPedidos((prev) =>
-        prev.map((p) => (p.id === pid ? { ...p, avaliado: true } : p)),
-      );
-      setPedidoAvaliandoId(null);
-    }
-    showToast("Avaliação enviada, obrigado! ⭐");
+    return apiFetch("/api/avaliacoes", {
+      method: "POST",
+      body: { itemId, estrelas, comentario, foto: foto || undefined, pedidoId: pedidoAvaliandoId || undefined },
+    })
+      .then(({ avaliacao, pedidoMarcado }) => {
+        setReviewsUser((prev) => comAvaliacao(prev, itemId, avaliacao));
+        if (pedidoMarcado) {
+          setPedidos((prev) => prev.map((p) => (p.id === pedidoMarcado ? { ...p, avaliado: true } : p)));
+        }
+        setPedidoAvaliandoId(null);
+        showToast("Avaliação enviada, obrigado! ⭐");
+        return true;
+      })
+      .catch((err) => {
+        showToast(err.message || "Não foi possível enviar a avaliação, tente novamente");
+        return false;
+      });
   }
 
   /* ---------------- Carrinho ----------------------------------------------- */
@@ -1183,19 +1212,35 @@ export function AppProvider({ children }) {
       showToast("Informe o endereço de entrega");
       return;
     }
-    pedidoPendenteRef.current = montarPedidoPendente();
-    setCartOpen(false);
-    // "Pagar depois" (só mesa, ver FormaPagamento.jsx) pula o checkout de
-    // Pix/Cartão/Dinheiro inteiro — não tem pagamento pra simular agora, o
-    // pedido só precisa ir pra cozinha na hora, igual pediria pro garçom
-    // anotar num restaurante de verdade.
-    if (tipoPedido === "mesa" && pagamentoTiming === "depois") {
-      enviarPedidoPagarDepois();
-    } else {
-      setPixEtapa("aguardando");
-      setPixOpen(true);
-      falarResumoPedido();
+    // Sem nenhum produto cadastrado no cardápio não há o que pedir.
+    if (!MENU.length || itensAtivos.some((c) => !MENU.some((m) => m.id === c.itemId))) {
+      showToast("Há itens no carrinho que não estão mais no cardápio. Remova-os para continuar");
+      return;
     }
+    const pendente = montarPedidoPendente();
+    // Limite pelo cadastro: o servidor confere se os ingredientes cadastrados dão conta
+    // do pedido ANTES de abrir o checkout (só um 409 barra; falha de rede segue e o
+    // POST final reporta o erro).
+    apiFetch("/api/pedidos/disponibilidade", { method: "POST", body: { itens: pendente.itens } })
+      .catch((err) => {
+        if (err.status === 409) throw err;
+      })
+      .then(() => {
+        pedidoPendenteRef.current = pendente;
+        setCartOpen(false);
+        // "Pagar depois" (só mesa, ver FormaPagamento.jsx) pula o checkout de
+        // Pix/Cartão/Dinheiro inteiro — não tem pagamento pra simular agora, o
+        // pedido só precisa ir pra cozinha na hora, igual pediria pro garçom
+        // anotar num restaurante de verdade.
+        if (tipoPedido === "mesa" && pagamentoTiming === "depois") {
+          enviarPedidoPagarDepois();
+        } else {
+          setPixEtapa("aguardando");
+          setPixOpen(true);
+          falarResumoPedido();
+        }
+      })
+      .catch((err) => showToast(err.message));
   }
 
   /* ---------------- Checkout Pix / Cartão / Dinheiro ---------------------- */
@@ -1249,11 +1294,13 @@ export function AppProvider({ children }) {
         }
         enviarPedidoAoServidor(pendente)
           .then(() => setPixEtapa("preparo"))
-          .catch(() => {
+          .catch((err) => {
             // Mantém carrinho/cupom intactos pra dar pra tentar de novo —
             // diferente de antes, agora essa gravação pode falhar de verdade
-            // (rede/servidor), não só ficar em localStorage.
-            showToast("Não foi possível confirmar o pedido, tente novamente");
+            // (rede/servidor, ou 409 de estoque, que traz o motivo).
+            showToast(
+              err.status === 409 ? err.message : "Não foi possível confirmar o pedido, tente novamente",
+            );
           })
           .finally(() => setPixCarregando(false));
       }, 1400);
@@ -1271,7 +1318,9 @@ export function AppProvider({ children }) {
         const como = pagarDepoisComo === "caixa" ? "no caixa" : "chamando o garçom";
         showToast(`Pedido #${pedido.id} enviado pra cozinha — pague ${como} quando quiser 👍`);
       })
-      .catch(() => showToast("Não foi possível enviar o pedido, tente novamente"));
+      .catch((err) =>
+        showToast(err.status === 409 ? err.message : "Não foi possível enviar o pedido, tente novamente"),
+      );
   }
 
   /* ---------------- Pedidos (histórico) ------------------------------------ */

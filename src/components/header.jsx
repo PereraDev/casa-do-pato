@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { NAV_TABS, CATEGORIES } from "../data/data.js";
 import { useApp } from "../context/AppContext.jsx";
 import { rolarParaSecao, MOTIVO_GARCOM } from "../utils/utils.js";
@@ -214,6 +215,12 @@ export function SearchBar() {
     limparBuscaIA,
   } = useApp();
 
+  const inputRef = useRef(null);
+  // Abrir a busca já coloca o cursor no campo (no celular, abre o teclado).
+  useEffect(() => {
+    if (searchOpen) inputRef.current?.focus();
+  }, [searchOpen]);
+
   function irParaCategoria(catId) {
     setSearchOpen(false);
     rolarParaSecao(catId);
@@ -231,15 +238,22 @@ export function SearchBar() {
 
   function onClicarSugestaoIA(sugestao) {
     setTermoBusca(sugestao);
-    buscarComIA(sugestao);
+    // Sugestão não é nome de prato: se a IA falhar, limpa o campo em vez de deixar
+    // o filtro de texto esconder o cardápio inteiro ("Nenhum prato encontrado").
+    buscarComIA(sugestao).then((ok) => {
+      if (!ok) setTermoBusca("");
+    });
   }
 
   return (
-    <div className="search-row" hidden={!searchOpen}>
+    <div className="search-row" hidden={!searchOpen} onKeyDown={(e) => e.key === "Escape" && setSearchOpen(false)}>
       <form className="busca-ia-form" onSubmit={onSubmit}>
         <input
+          ref={inputRef}
           type="text"
-          placeholder="Buscar prato, ou pergunte: 'algo leve e barato'"
+          enterKeyHint="search"
+          aria-label="Buscar no cardápio"
+          placeholder="Buscar prato ou perguntar…"
           autoComplete="off"
           value={termoBusca}
           onChange={(e) => onChangeTermo(e.target.value)}

@@ -54,9 +54,10 @@ const RESPONSE_SCHEMA = {
 };
 
 export default async function iaRoutes(fastify) {
+  if (!ai) fastify.log.warn("GEMINI_API_KEY ausente: busca por IA desligada (rota responde 503)");
   fastify.post("/api/ia/busca", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     if (!ai) {
-      return reply.code(503).send({ erro: "Busca por IA não está configurada neste ambiente" });
+      return reply.code(503).send({ erro: "A busca por IA está desligada no momento. Use a busca por texto." });
     }
     const { pergunta, itens } = request.body || {};
     if (
@@ -104,7 +105,11 @@ export default async function iaRoutes(fastify) {
       };
     } catch (err) {
       request.log.error(err, "Falha na busca por IA");
-      return reply.code(502).send({ erro: "Não foi possível buscar com IA agora, tente de novo" });
+      // 429 do Gemini = cota do tier gratuito estourada; o resto (chave inválida, modelo, rede) vira 502.
+      if (err?.status === 429) {
+        return reply.code(429).send({ erro: "A IA atingiu o limite de uso agora. Tente de novo em instantes." });
+      }
+      return reply.code(502).send({ erro: "A IA não respondeu agora, tente de novo." });
     }
   });
 }

@@ -3,7 +3,7 @@ import { ADDON_GROUPS } from "../data/data.js";
 import { fmt, precoBase } from "../utils/utils.js";
 import { useApp } from "../context/AppContext.jsx";
 import { ModalSheet } from "../App.jsx";
-import { Estrelas } from "./menu.jsx";
+import { Estrelas, FotoItem } from "./menu.jsx";
 
 // Ficha completa de um item do cardápio: imagem, favoritar, personalização
 // "monte do seu jeito" (Ingredientes), grupos de adicionais (AddonGroup),
@@ -44,11 +44,7 @@ export function ProductSheet() {
         {item && (
           <>
             <div className="product-hero">
-              {item.imgUrl ? (
-                <img src={item.imgUrl} alt={item.nome} loading="lazy" />
-              ) : (
-                <span aria-hidden="true">{item.img}</span>
-              )}
+              <FotoItem item={item} />
               <button
                 className={"btn-favorito grande" + (isFavorito(item.id) ? " ativo" : "")}
                 aria-label={
@@ -230,8 +226,7 @@ function formatarData(iso) {
 
 // Lista de avaliações do item (mock + do usuário, ver
 // AppContext#getReviews) + formulário pra deixar uma nova avaliação, com
-// foto opcional (lida como base64 via FileReader, nunca enviada a lugar
-// nenhum — fica só no localStorage deste navegador).
+// foto opcional (reduzida no navegador e enviada junto da avaliação ao back-end).
 export function Reviews({ itemId }) {
   const { getReviews, mediaEstrelas, enviarAvaliacao, pedidoAvaliandoId, showToast } =
     useApp();
@@ -243,9 +238,23 @@ export function Reviews({ itemId }) {
   function onEscolherFoto(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setFotoReview(reader.result);
-    reader.readAsDataURL(file);
+    // Reduz pra no máx. 800px em JPEG antes de enviar (foto de celular tem vários MB).
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const escala = Math.min(1, 800 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * escala);
+      canvas.height = Math.round(img.height * escala);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      setFotoReview(canvas.toDataURL("image/jpeg", 0.7));
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      showToast("Não foi possível ler essa imagem");
+    };
+    img.src = url;
   }
 
   const reviews = getReviews(itemId);
@@ -271,10 +280,12 @@ export function Reviews({ itemId }) {
       showToast("Escreva uma pequena descrição da sua avaliação");
       return;
     }
-    enviarAvaliacao(itemId, novaEstrelas, comentario.trim(), fotoReview);
-    setNovaEstrelas(0);
-    setComentario("");
-    setFotoReview(null);
+    enviarAvaliacao(itemId, novaEstrelas, comentario.trim(), fotoReview).then((ok) => {
+      if (!ok) return;
+      setNovaEstrelas(0);
+      setComentario("");
+      setFotoReview(null);
+    });
   }
 
   return (

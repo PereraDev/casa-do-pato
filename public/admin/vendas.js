@@ -19,7 +19,7 @@ export function renderAvaliacoes() {
   var html = ''
     + '<div class="card panel rating-summary" style="align-items:center;">'
     +   '<div><div class="rating-big num">' + avg + '</div>' + starRow(Math.round(reviews.length ? avg : 0)) + '</div>'
-    +   '<div class="section-note" style="margin:0;">Baseado em ' + reviews.length + ' avaliações (mock do cardápio + tnm_reviews_user)</div>'
+    +   '<div class="section-note" style="margin:0;">Baseado em ' + reviews.length + ' avaliações (mock do cardápio + avaliações reais do banco)</div>'
     + '</div>'
     + '<div class="chip-row" style="margin-bottom:16px;">'
     +   filters.map(function (f) {

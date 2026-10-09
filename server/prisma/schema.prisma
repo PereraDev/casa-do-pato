@@ -25,6 +25,21 @@ model User {
   pedidos           Order[]
 }
 
+// Avaliação de prato — compartilhada entre dispositivos (antes ficava só no
+// localStorage de quem avaliou). itemId = id do prato no catálogo do front (sem FK,
+// o catálogo não vive no Postgres). `foto` = dataURL já reduzida pelo cliente.
+model Avaliacao {
+  id         String   @id @default(cuid())
+  itemId     String
+  autor      String
+  estrelas   Int
+  comentario String
+  foto       String?
+  criadoEm   DateTime @default(now())
+
+  @@index([itemId, criadoEm])
+}
+
 // Pedido — campos escalares que fazem sentido tipados/indexáveis viram
 // coluna real; itens/divisao/agendamento/grupoSnapshot ficam em JSONB porque
 // são arrays/objetos cuja forma é 100% definida pelo front

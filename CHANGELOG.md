@@ -7,6 +7,42 @@ arquitetura atual, sem histórico) — aqui é histórico; lá é o "estado atua
 
 ---
 
+## 2026-10-09 — Limite por cadastro, avaliações no banco, IA, carrinho e busca
+
+### Limite de pedido pelo cadastro
+- `validarEstoquePedido` (servidor) soma o consumo dos ingredientes ativos cadastrados
+  na ficha técnica e recusa com 409 e mensagem clara quando não cobre o pedido;
+  `POST /api/pedidos/disponibilidade` confere antes do checkout. Sem ficha/insumo
+  cadastrado não há limite (decisão: não travar o restaurante com cadastro vazio).
+
+### Avaliações no Postgres
+- Nova tabela `Avaliacao` (migration `avaliacoes`), `GET/POST /api/avaliacoes`, evento
+  `avaliacao:nova`. O admin lê do banco. "Avaliar pedido" agora marca `avaliado` no
+  servidor (antes só no estado local, voltava a "não avaliado" ao recarregar). Foto
+  reduzida no navegador. Avaliações antigas do `localStorage` não são migradas.
+
+### IA
+- Causa no deploy: `GEMINI_API_KEY` não existe no Render (a rota respondia 503). O código
+  funciona (testado com chave real). Mensagens de erro passaram a ser claras (503/429/502),
+  aviso no log de subida e, se uma sugestão falha, o campo é limpo em vez de esconder o cardápio.
+
+### Carrinho e busca
+- Carrinho: sugestões saíram da faixa fixa (roubava metade da tela no celular) e entram na
+  rolagem; mais espaço entre itens, alvos de toque maiores, cupom recolhido por padrão.
+- Busca: o painel não tinha fundo (sugestões ficavam por cima do cardápio) nem limite de
+  altura; chips viraram linhas roláveis, o campo ganha foco ao abrir, `Esc` fecha e fechar
+  limpa o termo (antes o filtro continuava valendo escondido e o cardápio parecia vazio).
+
+### Achados nos testes e corrigidos
+- Avaliação aparecia duplicada (resposta do POST + socket): deduplicada por id.
+- Admin abria fixo em ago/2026: pedidos novos não apareciam em Pedidos/Visão Geral. Agora
+  abre no mês atual.
+- Foto do Pudim (Unsplash) saiu do ar e o texto alternativo gigante tomava o card: fallback
+  `FotoItem` pro emoji e URL removida.
+- Toast longo ficava estreito e sumia rápido: largura e duração proporcionais ao texto.
+
+---
+
 ## 2026-10-08 — Segurança, equipe no banco, e-mail, identidade e deploy no Render
 
 ### Resumo

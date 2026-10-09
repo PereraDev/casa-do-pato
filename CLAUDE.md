@@ -170,7 +170,7 @@ pedaço de estado cabe num destes grupos:
 
 Chaves usadas no `localStorage` (prefixo `tnm_`): `tnm_cart`,
 `tnm_tipo_pedido`, `tnm_pagamento`, `tnm_mesa`, `tnm_endereco`, `tnm_obs`,
-`tnm_cupom`, `tnm_usar_cashback`, `tnm_pessoas`, `tnm_reviews_user`,
+`tnm_cupom`, `tnm_usar_cashback`, `tnm_pessoas`,
 `tnm_favoritos`, `tnm_favoritos_personalizados`. `tnm_pedidos` e
 `tnm_sessao` **não existem mais** — pedidos e sessão de login vêm do
 back-end agora (ver acima); `tnm_usuarios` também não existe mais do lado
@@ -242,7 +242,13 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   ex. "Turbine seu Hambúrguer"), personalização "monte do seu jeito"
   (remover ingredientes padrão sem alterar preço), cálculo de total.
 - **Avaliações**: nota (1–5 estrelas) + comentário por item; mistura
-  avaliações mockadas (`REVIEWS_MOCK`) com as do próprio usuário.
+  avaliações mockadas (`REVIEWS_MOCK`) com as reais, que vivem na tabela
+  `Avaliacao` do Postgres (`GET/POST /api/avaliacoes`, `routes/avaliacoes.js`) —
+  qualquer dispositivo vê, e o admin recebe `avaliacao:nova` por socket. O autor
+  vem da sessão (nome da conta ou "Visitante"). A foto opcional é reduzida no
+  navegador (800px, JPEG) antes do envio (servidor recusa > ~400 KB). Quando vem de
+  "Avaliar pedido", o `pedidoId` marca `Order.avaliado` no servidor (só se o
+  pedido for da própria sessão). `tnm_reviews_user` não existe mais.
 - **Busca por IA no cardápio** (`header.jsx#SearchBar`, `POST /api/ia/busca` —
   ver "Back-end (`server/`)"): opt-in, só dispara no clique em "✨ Perguntar
   à IA" ou num dos chips de sugestão livre (`SUGESTOES_IA` — "Me
@@ -845,7 +851,10 @@ sempre da sessão, nunca do corpo), `POST /api/pedidos/pdv` (venda do PDV
 admin), `GET /api/pedidos/meus` (histórico da sessão atual — conta ou
 `guestId`), `GET /api/pedidos/fila` (fila pública mínima, pra
 `estimarTempoFila`), `GET /api/pedidos/todos` (usada pelo admin),
-`PATCH /api/pedidos/:id/status` (KDS), `PATCH /api/pedidos/:id/cancelar`.
+`PATCH /api/pedidos/:id/status` (KDS), `PATCH /api/pedidos/:id/cancelar`,
+`POST /api/pedidos/disponibilidade` (confere o estoque sem gravar, ver "Limite de
+pedido pelo cadastro"). Avaliações: `GET /api/avaliacoes` (público, mapa
+`itemId` → lista), `POST /api/avaliacoes` (10/min).
 Garçom: `POST /api/garcom/chamadas`, `GET /api/garcom/chamadas{,/pendentes,
 /minhas}`, `PATCH /api/garcom/chamadas/:id/{atender,avaliar}`. Grupo:
 `POST /api/grupo` (criar), `POST /api/grupo/:codigo/{entrar,sair,limpar}`,
@@ -943,7 +952,8 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
   `unidade` de insumo (kg/g/l/ml/un) são validados no servidor.
 - **Cookie de sessão**: `secure` em produção, `maxAge` de 30 dias.
 - **Testes**: `cd server && npm test` (`test/seguranca.test.js`,
-  `test/socket-admin.test.js`, `test/email.test.js` — 20 testes). Usam o banco do
+  `test/socket-admin.test.js`, `test/email.test.js`, `test/pedidos-avaliacoes.test.js`,
+  `test/ia.test.js` — 30 testes). Usam o banco do
   `.env`: criam registros temporários (`...@teste.local`, funcionários e contas de
   cliente) e apagam no fim; o Resend é simulado, nenhum e-mail sai. **Não rode
   apontando pro banco de produção.**
@@ -973,6 +983,17 @@ estoque dos insumos, tudo-ou-nada, sem recebimento parcial), `ContaPagar`
 excluída cancelando a compra, nunca direto) e `ContaReceber` (só recebíveis
 avulsos, não ligados a `Order` — o pedido do cliente já tem seu próprio
 ciclo de pagamento via Pix/cartão/dinheiro/pendente-*).
+
+**Limite de pedido pelo cadastro** (`lib/estoque.js#validarEstoquePedido`): antes de
+gravar, `POST /api/pedidos` e `/pdv` somam o consumo de cada insumo ativo (ficha
+técnica × quantidade, entre todas as linhas do pedido) e comparam com
+`estoqueAtual`; se faltar, **409** `{erro}` com prato, ingrediente e quanto há
+("Sem estoque suficiente para X-Salada: falta Pão (disponível 1 un)..."), nada é
+gravado. `POST /api/pedidos/disponibilidade` faz a mesma checagem sem gravar — o
+`AppContext#finalizarPedido` chama antes de abrir o checkout, pra não descobrir a
+falta só depois de "pagar"; o toast mostra a mensagem do servidor (e o do PDV do
+admin também). Sem produto no cardápio (`MENU` vazio) ou com item que saiu dele, o
+checkout nem abre. Prato sem ficha técnica ou insumo inativo não limita.
 
 **Baixa de estoque por venda** (`server/src/lib/estoque.js#baixarEstoquePorVenda`):
 chamada de dentro de **ambas** as rotas que criam `Order`
@@ -1173,8 +1194,8 @@ em vez de escrever direto em `tnm_pedidos` — o servidor passa a atribuir
 `lsGet("tnm_pedidos", ...)`. Fora isso, a integração continua via
 localStorage compartilhado:
 
-- **Lê** `tnm_reviews_user` (Avaliações, combinado com o mock),
-  `tnm_usuarios` (aba Clientes e Membros da aba Fidelidade).
+- **Lê** `tnm_usuarios` (aba Clientes e Membros da aba Fidelidade). Avaliações
+  vêm do back-end (`state.avaliacoesCache`, `GET /api/avaliacoes` + socket).
 - **Lê e escreve** `tnm_admin_menu_overrides`/`tnm_admin_menu_extra` (aba
   Pratos: esgotar/reabrir/editar nome-preço-descrição/estoque de item
   existente, ou criar/remover item novo — `data.js#aplicarCatalogoAdmin`
@@ -1408,8 +1429,12 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   gravados no pedido — só existem durante o checkout (mesma limitação que
   o troco do PDV do admin já tinha).
 - **Busca por IA**: depende de `GEMINI_API_KEY` configurada no servidor
-  (gratuita, mas exige conta no Google AI Studio) — sem ela, cai pro filtro
-  de texto comum sem avisar que a IA "existe" mas está desligada.
+  (gratuita, mas exige conta no Google AI Studio; **no Render ela precisa ser
+  cadastrada em Environment**, o `.env` local não vai pro deploy). Sem ela a rota
+  responde 503 "A busca por IA está desligada no momento" e a tela mostra essa
+  mensagem (log do servidor avisa na subida); cota estourada vira 429 e o resto
+  502. Se a falha vier de um chip de sugestão, o campo é limpo pra não esconder o
+  cardápio com um filtro de texto sem sentido.
 - **Mapa de entrega**: o mapa em si é real (Leaflet + OpenStreetMap), mas a
   rota é ilustrativa — a loja fica num ponto fixo (`COORDS_LOJA` em
   `utils/utils.js`, ajustar pro endereço real antes de qualquer uso real) e
@@ -1428,6 +1453,13 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   administrador redefine a de alguém na aba Funcionários, e quem perdeu o
   acesso total roda `npm run admin:criar` de novo (redefine a senha do e-mail
   informado).
+- **Limite de pedido pelo cadastro**: só vale pra prato com ficha técnica e insumo
+  **ativo** (ver "ERP"). Sem ficha/insumo cadastrado não há o que limitar (o pedido
+  passa) — travar tudo travaria o restaurante enquanto o cadastro está vazio.
+  Checagem e baixa são passos separados: 2 pedidos simultâneos no último item podem
+  passar juntos. O estoque por prato do admin (`dish.estoque`) continua só no
+  `localStorage` do navegador do admin, **não alcança outros celulares** (o cardápio
+  editado no admin também não). Upgrade: mover catálogo e estoque de prato pro Postgres.
 - `POST /api/pedidos` valida formato/limites (itens, qtd, tamanho de texto,
   tipo) mas **continua confiando em `total`/`cupom`/`cashbackUsado`
   vindos do cliente** — o catálogo mora no front, então o servidor não

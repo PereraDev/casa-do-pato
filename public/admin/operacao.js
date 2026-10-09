@@ -175,8 +175,8 @@ export function pdvFinalizarVenda() {
     renderProdutosDesempenho();
     renderCaixas();
     if (pedido.tipo === "entrega") renderDelivery();
-  }).catch(function () {
-    alert("Não foi possível registrar a venda, tente novamente.");
+  }).catch(function (err) {
+    alert((err && err.message) || "Não foi possível registrar a venda, tente novamente.");
     if (btn) btn.disabled = false;
   });
 }

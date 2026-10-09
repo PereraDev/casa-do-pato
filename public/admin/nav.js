@@ -137,7 +137,9 @@ export function buildFilters() {
   mSel.innerHTML = MONTHS.map(function (m, i) { return '<option value="' + (i+1) + '">' + m + '</option>'; }).join("");
   mSel.value = state.period.month;
   var ySel = document.getElementById("filterYear");
-  ySel.innerHTML = ["2025","2026"].map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join("");
+  var anos = [];
+  for (var a = 2025; a <= Math.max(2026, new Date().getFullYear()); a++) anos.push(String(a));
+  ySel.innerHTML = anos.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join("");
   ySel.value = state.period.year;
   mSel.addEventListener("change", function () { state.period.month = parseInt(mSel.value,10); renderPeriodDependent(); });
   ySel.addEventListener("change", function () { state.period.year = parseInt(ySel.value,10); renderPeriodDependent(); });

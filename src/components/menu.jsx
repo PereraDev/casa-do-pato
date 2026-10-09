@@ -1,7 +1,19 @@
+import { useState } from "react";
 import { CATEGORIES, MENU } from "../data/data.js";
 import { useApp } from "../context/AppContext.jsx";
 import { fmt, getConfigFidelidade, getContaFidelidade, getNivel, saldoPontos } from "../utils/utils.js";
 import { ModalSheet } from "../App.jsx";
+
+// Foto do prato com fallback pro emoji: se a URL falhar (foto removida, offline), o
+// navegador mostraria o texto alternativo gigante dentro do card.
+export function FotoItem({ item }) {
+  const [falhou, setFalhou] = useState(false);
+  return item.imgUrl && !falhou ? (
+    <img src={item.imgUrl} alt={item.nome} loading="lazy" onError={() => setFalhou(true)} />
+  ) : (
+    <span aria-hidden="true">{item.img}</span>
+  );
+}
 
 // Faixa do Clube de Fidelidade fixada logo abaixo das abas de categoria, no
 // topo do cardápio — antes só era acessível de dentro de "Sua conta". O
@@ -275,11 +287,7 @@ export function ItemCard({ item }) {
         >
           {favoritado ? "♥" : "♡"}
         </button>
-        {item.imgUrl ? (
-          <img src={item.imgUrl} alt={item.nome} loading="lazy" />
-        ) : (
-          <span aria-hidden="true">{item.img}</span>
-        )}
+        <FotoItem item={item} />
       </div>
       <div className="item-info">
         <h3>{item.nome}</h3>

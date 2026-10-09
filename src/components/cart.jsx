@@ -3,6 +3,7 @@ import { MENU, UPSELL_IDS } from "../data/data.js";
 import { fmt, precoBase, getCartoesSalvos } from "../utils/utils.js";
 import { useApp } from "../context/AppContext.jsx";
 import { ModalSheet } from "../App.jsx";
+import { FotoItem } from "./menu.jsx";
 
 // O carrinho completo: pedido em grupo (GrupoPedido), lista de itens
 // (CartItem), campos do pedido (PedidoInfo), sugestões de acompanhamento
@@ -65,12 +66,11 @@ export function CartDrawer() {
             {itensAtivos.map((linha, idx) => (
               <CartItem key={idx} linha={linha} idx={idx} />
             ))}
+            <Upsell />
             <PedidoInfo />
           </>
         )}
       </div>
-
-      <Upsell />
 
       <div className="cart-foot">
         <div className="cart-extra-wrap">{itensAtivos.length > 0 && <CartExtra />}</div>
@@ -630,6 +630,7 @@ export function CartExtra() {
   } = useApp();
   const cashbackDisponivel = saldoCashbackDisponivel();
   const [inputCupom, setInputCupom] = useState("");
+  const [cupomAberto, setCupomAberto] = useState(false);
 
   function onSubmitCupom(e) {
     e.preventDefault();
@@ -661,16 +662,28 @@ export function CartExtra() {
           </button>
         </div>
       ) : (
-        <form className="cupom-form" onSubmit={onSubmitCupom}>
-          <input
-            type="text"
-            placeholder="Tem um cupom?"
-            autoComplete="off"
-            value={inputCupom}
-            onChange={(e) => setInputCupom(e.target.value)}
-          />
-          <button type="submit">Aplicar</button>
-        </form>
+        // Campo de cupom recolhido por padrão (menos ruído no rodapé); 1 toque abre.
+        <>
+          {!cupomAberto && (
+            <button type="button" className="cupom-toggle" onClick={() => setCupomAberto(true)}>
+              🏷️ Tem um cupom?
+            </button>
+          )}
+          {cupomAberto && (
+            <form className="cupom-form" onSubmit={onSubmitCupom}>
+              <input
+                type="text"
+                placeholder="Código do cupom"
+                aria-label="Código do cupom"
+                autoComplete="off"
+                autoFocus
+                value={inputCupom}
+                onChange={(e) => setInputCupom(e.target.value)}
+              />
+              <button type="submit">Aplicar</button>
+            </form>
+          )}
+        </>
       )}
 
       {cashbackDisponivel > 0 && (
@@ -790,11 +803,7 @@ export function Upsell() {
         {sugestoes.map((item) => (
           <div className="upsell-card" key={item.id}>
             <div className="upsell-img">
-              {item.imgUrl ? (
-                <img src={item.imgUrl} alt={item.nome} loading="lazy" />
-              ) : (
-                <span aria-hidden="true">{item.img}</span>
-              )}
+              <FotoItem item={item} />
               <button
                 className="upsell-add"
                 aria-label={`Adicionar ${item.nome} ao pedido`}

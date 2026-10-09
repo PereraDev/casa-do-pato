@@ -316,8 +316,7 @@ export const MENU_BASE = [
     preco: 14.5,
     icon: "🍮",
     img: "🍮",
-    imgUrl:
-      "https://images.unsplash.com/photo-1470124182917-cc6de9827bc4?auto=format&fit=crop&w=800&q=80",
+    // sem imgUrl de propósito: a foto antiga do Unsplash saiu do ar (404) — cai no emoji 🍮
     addons: [],
   },
   {

@@ -171,9 +171,9 @@ export function removeDishExtra(id) {
 }
 export function isBaseDish(id) { return MENU_BASE.some(function (d) { return d.id === id; }); }
 
-/* ---- Avaliações reais (tnm_reviews_user) + mockadas (REVIEWS_MOCK) ---- */
+/* ---- Avaliações reais (back-end, state.avaliacoesCache) + mockadas (REVIEWS_MOCK) ---- */
 export function getReviews() {
-  var userReviews = lsGet("tnm_reviews_user", {});
+  var userReviews = state.avaliacoesCache || {};
   var dishById = {};
   getDishes().concat(MENU_BASE).forEach(function (d) { dishById[d.id] = d.name; });
   var out = [];
@@ -225,6 +225,9 @@ export function getPedidosReais() {
       tipoLabel: TIPO_PEDIDO_LABEL[p.tipo] || p.tipo
     });
   });
+}
+export function carregarAvaliacoesCache() {
+  return api("/api/avaliacoes").then(function (av) { state.avaliacoesCache = av; });
 }
 export function carregarPedidosCache() {
   return api("/api/pedidos/todos").then(function (pedidos) { state.pedidosCache = pedidos; });
@@ -618,7 +621,8 @@ export function creditarCompraFid(email, totalPedido, pedidoId) {
 /* ============ ESTADO DA UI (só a interação do painel, não os dados) ============ */
 export var state = {
   activeSection: "dashboard",
-  period: { month: 8, year: 2026 },
+  // Abre no mês atual (antes fixo em ago/2026: pedidos novos "sumiam" de Pedidos/Visão Geral).
+  period: { month: new Date().getMonth() + 1, year: new Date().getFullYear() },
   dishFilter: "Todos",
   reviewFilter: 0,
   usuarioLogado: null,
@@ -631,6 +635,7 @@ export var state = {
   // de socket (ver initSocket). getPedidosReais()/getChamadasGarcom() leem
   // daqui, não mais de localStorage.
   pedidosCache: [],
+  avaliacoesCache: {},
   chamadasCache: [],
   usuariosCache: [],
 
@@ -791,7 +796,7 @@ export var SECTIONS = [
 export var socket = io({ path: "/socket.io" });
 
 export function carregarCachesEmTempoReal() {
-  return Promise.all([carregarPedidosCache(), carregarChamadasCache()]);
+  return Promise.all([carregarPedidosCache(), carregarChamadasCache(), carregarAvaliacoesCache()]);
 }
 // Registrado 1x só (ver jaInicializado em init.js) — religar estes
 // listeners a cada login duplicaria as reações a cada evento.
@@ -816,6 +821,11 @@ export function initSocket() {
   });
   socket.on("pedido:atualizado", function (patch) {
     patchPedidoCache(patch.id, patch);
+    rerenderSecaoAtiva();
+  });
+  socket.on("avaliacao:nova", function (e) {
+    state.avaliacoesCache = Object.assign({}, state.avaliacoesCache);
+    state.avaliacoesCache[e.itemId] = [e.avaliacao].concat(state.avaliacoesCache[e.itemId] || []);
     rerenderSecaoAtiva();
   });
   socket.on("garcom:nova", function (chamada) {

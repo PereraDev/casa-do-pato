@@ -12,7 +12,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "node --env-file=.env prisma/seed.js",
     "admin:criar": "node --env-file-if-exists=.env scripts/criar-admin.js",
-    "test": "node --env-file=.env --test test/seguranca.test.js test/socket-admin.test.js test/email.test.js"
+    "test": "node --env-file=.env --test test/seguranca.test.js test/socket-admin.test.js test/email.test.js test/pedidos-avaliacoes.test.js test/ia.test.js"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.0",

@@ -1,4 +1,4 @@
-import { baixarEstoquePorVenda } from "../lib/estoque.js";
+import { baixarEstoquePorVenda, validarEstoquePedido } from "../lib/estoque.js";
 import { formatarIdPedido, seqDoId } from "../lib/ids.js";
 import { serializarPedido, serializarPedidoFila } from "../lib/serializers.js";
 
@@ -54,9 +54,26 @@ function pedidoValido(body, reply) {
 export default async function pedidosRoutes(fastify) {
   const { prisma, io } = fastify;
 
+  // 409 quando os ingredientes cadastrados não cobrem o pedido (ver lib/estoque.js).
+  async function estoqueCobre(itens, reply) {
+    const erro = await validarEstoquePedido(prisma, itens);
+    if (erro) reply.code(409).send({ erro });
+    return !erro;
+  }
+
+  // Pré-checagem sem gravar nada: o cliente chama antes de abrir o checkout, pra não
+  // descobrir a falta de estoque só depois de "pagar".
+  fastify.post("/api/pedidos/disponibilidade", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const body = request.body || {};
+    if (!pedidoValido({ ...body, total: 0, tipo: "balcao", pagamento: "x" }, reply)) return;
+    if (!(await estoqueCobre(body.itens, reply))) return;
+    return { ok: true };
+  });
+
   fastify.post("/api/pedidos", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = request.body || {};
     if (!pedidoValido(body, reply)) return;
+    if (!(await estoqueCobre(body.itens, reply))) return;
 
     // Identidade sempre vem da sessão — nunca do corpo (evita um cliente
     // forjar `clienteEmail` de outra conta).
@@ -83,6 +100,7 @@ export default async function pedidosRoutes(fastify) {
   fastify.post("/api/pedidos/pdv", { onRequest: fastify.exigirAdmin }, async (request, reply) => {
     const body = request.body || {};
     if (!pedidoValido(body, reply)) return;
+    if (!(await estoqueCobre(body.itens, reply))) return;
 
     const order = await prisma.order.create({
       data: {
