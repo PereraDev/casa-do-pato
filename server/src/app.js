@@ -7,6 +7,7 @@ import socketsPlugin from "./plugins/sockets.js";
 import staticFrontendPlugin from "./plugins/staticFrontend.js";
 import authRoutes from "./routes/auth.js";
 import avaliacoesRoutes from "./routes/avaliacoes.js";
+import catalogoRoutes from "./routes/catalogo.js";
 import comprasRoutes from "./routes/compras.js";
 import equipeRoutes from "./routes/equipe.js";
 import estoqueRoutes from "./routes/estoque.js";
@@ -51,6 +52,7 @@ export async function buildApp() {
   await fastify.register(authRoutes);
   await fastify.register(pedidosRoutes);
   await fastify.register(avaliacoesRoutes);
+  await fastify.register(catalogoRoutes);
   await fastify.register(garcomRoutes);
   await fastify.register(grupoRoutes);
   await fastify.register(iaRoutes);

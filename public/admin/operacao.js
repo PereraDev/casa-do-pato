@@ -5,7 +5,7 @@
 import {
   state, esc, brl, statusPill, api,
   getCategorias, getDishes,
-  getPedidosReais, avancarStatusPedido, decrementarEstoque,
+  getPedidosReais, avancarStatusPedido,
   chamadasPendentes, atenderChamada, MOTIVO_GARCOM,
   getCaixaAberto, abrirCaixa, registrarSangria, registrarVendaNoCaixa, resumoCaixa, fecharCaixa,
   getConfigLoja, lojaAberta, creditarCompraFid,
@@ -156,7 +156,6 @@ export function pdvFinalizarVenda() {
   if (btn) btn.disabled = true;
   api("/api/pedidos/pdv", { method: "POST", body: payload }).then(function (pedido) {
     registrarVendaNoCaixa(caixa.id, pedido.id);
-    decrementarEstoque(itens);
     if (clienteEmail) creditarCompraFid(clienteEmail, total, pedido.id);
 
     state.pdv.comanda = [];

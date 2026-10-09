@@ -7,6 +7,33 @@ arquitetura atual, sem histórico) — aqui é histórico; lá é o "estado atua
 
 ---
 
+## 2026-10-09 (2) — Catálogo no Postgres e preço conferido no servidor
+
+### Problema
+- `total`, preço e cupom do pedido vinham do cliente (o cardápio morava no front): quem mexesse
+  no DevTools pagava R$ 0,01. E tudo que o admin editava (preço, pratos novos, estoque,
+  categorias, adicionais) ficava no `localStorage` do navegador dele — os celulares dos
+  clientes nunca viam.
+
+### O que mudou
+- Tabelas `CatalogoConfig` e `EstoquePrato` (migration `catalogo_servidor`); `GET /api/catalogo`
+  entrega o cardápio efetivo; o app cliente recebe e atualiza ao vivo (`catalogo:atualizado`).
+- O painel admin grava no servidor (Pratos, Categorias, Adicionais, estoque); fotos reduzidas a 800px.
+- `conferirPedido`: preço, adicionais, cupom e estoque por prato recalculados/conferidos no servidor
+  (400/409 com mensagem); estoque do prato baixado de forma atômica (testado com 2 pedidos
+  simultâneos no último item). PDV também.
+- Módulo `src/data/catalogoAplicar.js` compartilhado (regras de aplicar edições); `data.js` deixou
+  de ler `localStorage`. Corrigido: preço editado no admin agora descarta a promoção do prato base
+  (antes o cliente continuava cobrando o preço promocional antigo).
+
+### Limite que sobrou
+- Cashback e assinatura (desconto de 10%) continuam vindos do cliente porque a fidelidade é
+  `localStorage`; o servidor limita ao subtotal e exige conta logada. Fechar de vez = mover a
+  fidelidade pro Postgres.
+- As edições antigas do admin no `localStorage` não foram migradas.
+
+---
+
 ## 2026-10-09 — Limite por cadastro, avaliações no banco, IA, carrinho e busca
 
 ### Limite de pedido pelo cadastro

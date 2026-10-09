@@ -57,8 +57,8 @@ A experiência segue a linha de apps como iFood e Uber Eats, mas pensada para qu
 
 O projeto é **híbrido**:
 
-- **No back-end (Postgres + Socket.IO):** contas e login (clientes e equipe), pedidos, avaliações, chamados de garçom, pedido em grupo, ERP e a busca por IA.
-- **No navegador (`localStorage`):** cardápio editado, fidelidade, carteira, PDV e caixa e configurações da loja.
+- **No back-end (Postgres + Socket.IO):** contas e login (clientes e equipe), cardápio editado e estoque por prato, pedidos (com preço conferido no servidor), avaliações, chamados de garçom, pedido em grupo, ERP e a busca por IA.
+- **No navegador (`localStorage`):** fidelidade, carteira, caixa do PDV e configurações da loja.
 
 Tudo que roda no servidor sincroniza em tempo real entre dispositivos. O resto funciona offline, simulando a latência de rede.
 
@@ -172,7 +172,7 @@ Para criar a chave: abra uma conta gratuita em [resend.com](https://resend.com),
 | `npm run build` | Gera o `dist/` |
 | `npm run lint` | Roda o Oxlint |
 | `npm run gerar:catalogo` | Regenera o catálogo do painel (roda sozinho em `dev` e `build`) |
-| `cd server && npm test` | 30 testes do back-end (segurança, socket, e-mail, estoque, avaliações e IA). Criam e apagam registros temporários no banco do `.env`; não rode contra produção |
+| `cd server && npm test` | 44 testes do back-end (segurança, socket, e-mail, preço, estoque, avaliações e IA). Criam e apagam registros temporários no banco do `.env`; não rode contra produção |
 | `cd server && npm run admin:criar` | Cria (ou redefine a senha de) um administrador do painel |
 | `cd server && npm run prisma:studio` | Interface gráfica do banco |
 
@@ -213,8 +213,8 @@ No plano gratuito o serviço "dorme" depois de alguns minutos sem acesso, e o pr
 Este é um protótipo acadêmico. Em especial:
 
 - **Pagamentos simulados:** Pix, cartão e dinheiro não passam por gateway. O código "Pix copia e cola" não é um payload válido.
-- **Limite de pedido pelo cadastro:** só vale para pratos com ficha técnica e ingredientes ativos cadastrados no ERP; sem cadastro, não há o que limitar. O estoque por prato e o cardápio editado no painel ficam só no navegador de quem editou.
-- **Preço do pedido vem do cliente:** o cardápio mora no front-end, então o servidor valida formato e limites, mas não recalcula o total.
+- **Limite de pedido pelo cadastro:** o limite por ingrediente só vale para pratos com ficha técnica e ingredientes ativos cadastrados no ERP; sem cadastro, não há o que limitar.
+- **Preço conferido no servidor, com uma brecha:** o total é recalculado a partir do cardápio do banco (cupom e adicionais inclusos), mas o cashback e o desconto da assinatura vêm da fidelidade, que ainda fica no navegador; o servidor limita esses abatimentos ao subtotal.
 - **Permissão por seção só no painel:** as contas de funcionário ficam no banco (senha com bcrypt) e a gestão da equipe exige função Administrador no servidor, mas quais seções cada pessoa vê é decidido pelo painel; no servidor, qualquer funcionário logado alcança as rotas operacionais.
 - **E-mail depende de configuração:** sem `RESEND_API_KEY` não há confirmação de cadastro e o código de recuperação só aparece no log do servidor; sem domínio verificado no Resend, os e-mails só chegam ao dono da conta Resend.
 - **Recibo do PDV não fiscal.**

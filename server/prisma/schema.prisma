@@ -25,6 +25,23 @@ model User {
   pedidos           Order[]
 }
 
+// Edições do admin sobre o catálogo-base (src/data/catalogoBase.js), uma linha por chave:
+// menu_overrides, menu_extra, categorias, addon_groups (mesmo formato que ficava em
+// localStorage). O servidor aplica por cima do base (src/data/catalogoAplicar.js) pra servir
+// o cardápio e conferir o preço dos pedidos.
+model CatalogoConfig {
+  chave        String   @id
+  valor        Json
+  atualizadoEm DateTime @updatedAt
+}
+
+// Estoque por prato (controle opcional): linha ausente = sem controle; 0 = esgotado.
+// Decrementado de forma atômica ao gravar o pedido (routes/pedidos.js).
+model EstoquePrato {
+  itemId     String @id
+  quantidade Int
+}
+
 // Avaliação de prato — compartilhada entre dispositivos (antes ficava só no
 // localStorage de quem avaliou). itemId = id do prato no catálogo do front (sem FK,
 // o catálogo não vive no Postgres). `foto` = dataURL já reduzida pelo cliente.

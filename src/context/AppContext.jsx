@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   ADDON_GROUPS,
-  baixarEstoque,
+  aplicarCatalogoServidor,
   COUPONS,
   MENU,
   REVIEWS_MOCK,
@@ -228,6 +228,30 @@ export function AppProvider({ children }) {
       socket.off("grupo:item-removido", onItemRemovido);
       socket.off("grupo:item-alterado", onItemAlterado);
       socket.off("grupo:limpo", onLimpo);
+    };
+  }, []);
+
+  /* ---------------- Catálogo (vem do servidor) ---------------------------- */
+  // Cardápio, categorias e adicionais já com as edições do admin e o estoque aplicados
+  // (GET /api/catalogo). data.js começa com o catálogo-base e é atualizado no lugar; o
+  // contador abaixo só força o re-render. O admin avisa por socket (catalogo:atualizado).
+  const [, setCatalogoVersao] = useState(0);
+  useEffect(() => {
+    let vivo = true;
+    function carregar() {
+      apiFetch("/api/catalogo")
+        .then((c) => {
+          if (!vivo) return;
+          aplicarCatalogoServidor(c);
+          setCatalogoVersao((v) => v + 1);
+        })
+        .catch(() => {}); // sem servidor: segue com o catálogo-base (o checkout avisa se falhar)
+    }
+    carregar();
+    socket.on("catalogo:atualizado", carregar);
+    return () => {
+      vivo = false;
+      socket.off("catalogo:atualizado", carregar);
     };
   }, []);
 
@@ -1163,6 +1187,9 @@ export function AppProvider({ children }) {
           nome: item.nome,
           qtd: c.qtd,
           subtotal: c.precoUnitario * c.qtd,
+          // O servidor recalcula o preço a partir destes campos (não confia no subtotal).
+          addons: c.addons,
+          ingredientesRemovidos: c.ingredientesRemovidos,
           participanteNome: c.participanteNome || undefined,
         };
       }),
@@ -1256,7 +1283,6 @@ export function AppProvider({ children }) {
   function enviarPedidoAoServidor(pendente) {
     return apiFetch("/api/pedidos", { method: "POST", body: pendente }).then((pedido) => {
       setPedidos((prev) => [pedido, ...prev]);
-      baixarEstoque(pedido.itens);
       if (pendente.clienteEmail) {
         if (pendente.cashbackUsado > 0) {
           debitarCashback(pendente.clienteEmail, pendente.cashbackUsado);

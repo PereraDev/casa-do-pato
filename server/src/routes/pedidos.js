@@ -1,5 +1,7 @@
+import { carregarConfig, catalogoEfetivo } from "../lib/catalogo.js";
 import { baixarEstoquePorVenda, validarEstoquePedido } from "../lib/estoque.js";
 import { formatarIdPedido, seqDoId } from "../lib/ids.js";
+import { conferirPedido } from "../lib/precos.js";
 import { serializarPedido, serializarPedidoFila } from "../lib/serializers.js";
 
 // Campos comuns entre o checkout do cliente (QR) e a venda do PDV — o resto
@@ -27,9 +29,8 @@ const TIPOS = ["balcao", "mesa", "entrega"];
 const STATUS_KDS = ["recebido", "preparo", "pronto", "entregue"];
 const texto = (v, max) => v == null || (typeof v === "string" && v.length <= max);
 
-// Limites de sanidade na borda pública. Preço/total continuam vindos do
-// cliente (o catálogo mora no front, ver CLAUDE.md) — aqui só barra lixo e abuso.
-// ponytail: sem catálogo no servidor não dá pra recalcular o total; upgrade = mover MENU pro Postgres.
+// Limites de sanidade na borda pública (formato e tamanho); preço, cupom e estoque são
+// conferidos depois contra o catálogo do servidor (lib/precos.js).
 function pedidoValido(body, reply) {
   const itens = body?.itens;
   const erro =
@@ -54,26 +55,52 @@ function pedidoValido(body, reply) {
 export default async function pedidosRoutes(fastify) {
   const { prisma, io } = fastify;
 
-  // 409 quando os ingredientes cadastrados não cobrem o pedido (ver lib/estoque.js).
-  async function estoqueCobre(itens, reply) {
-    const erro = await validarEstoquePedido(prisma, itens);
-    if (erro) reply.code(409).send({ erro });
-    return !erro;
+  // Valida formato, confere preço/cupom/estoque de prato contra o catálogo do servidor e os
+  // ingredientes cadastrados (409 se não cobrirem). Devolve o pedido normalizado — com os
+  // preços RECALCULADOS — ou null (a resposta de erro já foi enviada).
+  async function conferir(body, reply, opcoes) {
+    if (!pedidoValido(body, reply)) return null;
+    const cfg = await carregarConfig(prisma);
+    const r = conferirPedido(catalogoEfetivo(cfg), cfg.estoque, body, opcoes);
+    if (r.erro) {
+      reply.code(r.status).send({ erro: r.erro });
+      return null;
+    }
+    const falta = await validarEstoquePedido(prisma, r.itens);
+    if (falta) {
+      reply.code(409).send({ erro: falta });
+      return null;
+    }
+    return { ...r, controlados: [...r.porPrato].filter(([id]) => cfg.estoque[id] !== undefined) };
+  }
+
+  // Grava o pedido e baixa o estoque dos pratos controlados NA MESMA transação: o decremento
+  // condicional (quantidade >= pedido) impede que 2 pedidos simultâneos vendam o último item.
+  async function gravar(r, data) {
+    const order = await prisma.$transaction(async (tx) => {
+      for (const [itemId, qtd] of r.controlados) {
+        const { count } = await tx.estoquePrato.updateMany({
+          where: { itemId, quantidade: { gte: qtd } },
+          data: { quantidade: { decrement: qtd } },
+        });
+        if (!count) throw Object.assign(new Error("Um item do pedido acabou agora há pouco. Atualize o carrinho."), { statusCode: 409 });
+      }
+      return tx.order.create({ data });
+    });
+    if (r.controlados.length) io.emit("catalogo:atualizado");
+    return order;
   }
 
   // Pré-checagem sem gravar nada: o cliente chama antes de abrir o checkout, pra não
   // descobrir a falta de estoque só depois de "pagar".
   fastify.post("/api/pedidos/disponibilidade", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
-    const body = request.body || {};
-    if (!pedidoValido({ ...body, total: 0, tipo: "balcao", pagamento: "x" }, reply)) return;
-    if (!(await estoqueCobre(body.itens, reply))) return;
+    const body = { ...(request.body || {}), total: 0, tipo: "balcao", pagamento: "x" };
+    if (!(await conferir(body, reply, { verificarTotal: false }))) return;
     return { ok: true };
   });
 
   fastify.post("/api/pedidos", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = request.body || {};
-    if (!pedidoValido(body, reply)) return;
-    if (!(await estoqueCobre(body.itens, reply))) return;
 
     // Identidade sempre vem da sessão — nunca do corpo (evita um cliente
     // forjar `clienteEmail` de outra conta).
@@ -85,12 +112,12 @@ export default async function pedidosRoutes(fastify) {
       clienteEmail = user ? user.email : null;
     }
 
-    const order = await prisma.order.create({
-      data: { ...camposComuns(body), userId, guestId, clienteEmail },
-    });
+    const r = await conferir(body, reply, { logado: Boolean(clienteEmail) });
+    if (!r) return;
+    const order = await gravar(r, { ...camposComuns({ ...body, itens: r.itens }), userId, guestId, clienteEmail });
     const pedido = serializarPedido(order);
     io.to("admin").emit("pedido:novo", pedido);
-    await baixarEstoquePorVenda(prisma, io, formatarIdPedido(order.seq), body.itens);
+    await baixarEstoquePorVenda(prisma, io, formatarIdPedido(order.seq), r.itens);
     reply.code(201);
     return pedido;
   });
@@ -99,21 +126,19 @@ export default async function pedidosRoutes(fastify) {
   // opcional digitado pelo operador (ver CLAUDE.md, seção "PDV").
   fastify.post("/api/pedidos/pdv", { onRequest: fastify.exigirAdmin }, async (request, reply) => {
     const body = request.body || {};
-    if (!pedidoValido(body, reply)) return;
-    if (!(await estoqueCobre(body.itens, reply))) return;
+    const r = await conferir(body, reply, { pdv: true });
+    if (!r) return;
 
-    const order = await prisma.order.create({
-      data: {
-        ...camposComuns(body),
-        clienteEmail: body.clienteEmail || null,
-        origem: "pdv",
-        taxaEntrega: body.taxaEntrega ?? null,
-        caixaId: body.caixaId ?? null,
-      },
+    const order = await gravar(r, {
+      ...camposComuns({ ...body, itens: r.itens }),
+      clienteEmail: body.clienteEmail || null,
+      origem: "pdv",
+      taxaEntrega: body.taxaEntrega ?? null,
+      caixaId: body.caixaId ?? null,
     });
     const pedido = serializarPedido(order);
     io.to("admin").emit("pedido:novo", pedido);
-    await baixarEstoquePorVenda(prisma, io, formatarIdPedido(order.seq), body.itens);
+    await baixarEstoquePorVenda(prisma, io, formatarIdPedido(order.seq), r.itens);
     reply.code(201);
     return pedido;
   });

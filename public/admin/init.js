@@ -65,7 +65,7 @@ document.getElementById("loginForm").addEventListener("submit", function (e) {
   api("/api/admin/login", { method: "POST", body: corpo }).then(function (funcionario) {
     state.usuarioLogado = funcionario;
     // Limpeza: versões antigas guardavam a equipe (com senha em texto puro) aqui.
-    try { localStorage.removeItem("tnm_admin_funcionarios"); localStorage.removeItem("tnm_admin_funcoes"); } catch {}
+    try { ["tnm_admin_funcionarios", "tnm_admin_funcoes", "tnm_admin_menu_overrides", "tnm_admin_menu_extra", "tnm_admin_categorias", "tnm_admin_addon_groups"].forEach(function (k) { localStorage.removeItem(k); }); } catch {}
     return Promise.all([carregarFuncoesCache(), carregarFuncionariosCache()]);
   }).then(function () {
     // O socket conecta quando a página carrega, ANTES do login, e o servidor só lê o

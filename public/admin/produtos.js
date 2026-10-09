@@ -1,9 +1,9 @@
 // produtos.js — grupo "Produtos" do menu: Categorias, Pratos, Adicionais
 // Globais, Insumos e Ficha Técnica.
 import {
-  state, esc, brl, statusPill, lsGet, lsSet, api,
+  state, esc, brl, statusPill, api,
   getCategorias, getCategoriasDados, saveCategoriasDados, isCategoriaBase,
-  getDishes, catLabel, isBaseDish, saveDishOverride, addDishExtra, removeDishExtra, setEstoqueDish,
+  getDishes, catLabel, isBaseDish, saveDishOverride, addDishExtra, updateDishExtra, removeDishExtra, setEstoqueDish, lerImagemReduzida,
   getAddonGroups, isAddonGroupBase, saveAddonGroupOverride, saveAddonGroupExtra, removeAddonGroupExtra,
   getFornecedores, fornecedorLabel, insumoLabel
 } from "./core.js";
@@ -97,24 +97,19 @@ export function renderPratos() {
       var atual = getDishes().filter(function (d) { return d.id === id; })[0];
       var novoDisponivel = !(atual && atual.available !== false);
       if (isBaseDish(id)) { saveDishOverride(id, {available: novoDisponivel}); }
-      else {
-        var extras = lsGet("tnm_admin_menu_extra", []).map(function (d) { return d.id === id ? Object.assign({}, d, {available: novoDisponivel}) : d; });
-        lsSet("tnm_admin_menu_extra", extras);
-      }
+      else { updateDishExtra(id, {available: novoDisponivel}); }
       renderPratos();
     });
   });
   document.getElementById("dFoto").addEventListener("change", function (e) {
     var file = e.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      dishFormFotoData = reader.result;
+    lerImagemReduzida(file, function (dataUrl) {
+      dishFormFotoData = dataUrl;
       var preview = document.getElementById("dFotoPreview");
       preview.src = dishFormFotoData;
       preview.style.display = "";
-    };
-    reader.readAsDataURL(file);
+    });
   });
   document.getElementById("dishForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -160,14 +155,12 @@ export function renderModalEditarPrato() {
   document.getElementById("epFoto").addEventListener("change", function (e) {
     var file = e.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function () {
-      epFotoData = reader.result;
+    lerImagemReduzida(file, function (dataUrl) {
+      epFotoData = dataUrl;
       var preview = document.getElementById("epFotoPreview");
       preview.src = epFotoData;
       preview.style.display = "";
-    };
-    reader.readAsDataURL(file);
+    });
   });
   document.getElementById("editarPratoForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -175,14 +168,10 @@ export function renderModalEditarPrato() {
     var preco = parseFloat(document.getElementById("epPreco").value || "0");
     var desc = document.getElementById("epDesc").value.trim();
     if (!nome) return;
-    if (isBaseDish(id)) {
-      saveDishOverride(id, {name: nome, price: preco, desc: desc, foto: epFotoData || undefined});
-    } else {
-      var extras = lsGet("tnm_admin_menu_extra", []).map(function (x) {
-        return x.id === id ? Object.assign({}, x, {name: nome, price: preco, desc: desc, foto: epFotoData || undefined}) : x;
-      });
-      lsSet("tnm_admin_menu_extra", extras);
-    }
+    // foto só entra no patch se uma nova foi escolhida (senão apagaria a que já existe)
+    var patch = {name: nome, price: preco, desc: desc};
+    if (epFotoData) patch.foto = epFotoData;
+    if (isBaseDish(id)) saveDishOverride(id, patch); else updateDishExtra(id, patch);
     state.pratos.editandoId = null;
     renderModalEditarPrato();
     renderPratos();

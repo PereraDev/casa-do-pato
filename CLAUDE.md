@@ -18,10 +18,11 @@ estado nenhum (ver "Busca por IA no cardápio" abaixo e "Back-end (`server/`)").
 
 Este projeto tem um **painel administrativo companheiro** (`public/admin.html`
 — ver "Integração com o painel administrativo" mais abaixo), que roda como
-HTML solto na mesma origem. Cardápio, estoque, caixa/PDV (preço/cupom) e o
-clube de fidelidade continuam compartilhados via `localStorage`, do jeito que
-sempre foi; pedidos e chamado de garçom agora são compartilhados via o mesmo
-back-end (REST + Socket.IO), não mais via `localStorage`.
+HTML solto na mesma origem. Caixa/PDV (abertura/sangria), config da loja e o
+clube de fidelidade continuam no `localStorage`; **cardápio, categorias,
+adicionais e estoque por prato** (edições do admin), pedidos, avaliações e
+chamado de garçom vivem no back-end (REST + Socket.IO) e valem pra todos os
+dispositivos (ver "Catálogo no servidor").
 
 ## Stack
 
@@ -212,11 +213,7 @@ código foi gerado).
 
 Chaves adicionais compartilhadas com o **painel administrativo**
 (escritas/lidas pelos dois lados — ver "Integração com o painel
-administrativo"): `tnm_admin_menu_overrides`, `tnm_admin_menu_extra`
-(edições de cardápio/estoque feitas no admin), `tnm_admin_categorias`
-(categorias renomeadas/criadas no admin, aba Categorias),
-`tnm_admin_addon_groups` (grupos de adicionais editados/criados no admin,
-aba Adicionais Globais), `tnm_fidelidade` (extrato de pontos/cashback por
+administrativo"): `tnm_fidelidade` (extrato de pontos/cashback por
 conta), `tnm_admin_fidelidade_config` (config do clube, editada só pelo
 admin), `tnm_admin_caixas` (abertura/fechamento de caixa do PDV, só existe
 no admin), `tnm_admin_config_loja` (nome da loja, horário de funcionamento, taxa de
@@ -275,8 +272,8 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   então **grava o pedido de verdade no back-end** (`POST /api/pedidos`,
   dentro do 2º `setTimeout`, via `enviarPedidoAoServidor` — reaproveitada
   também pelo fluxo "pagar depois" da mesa, ver abaixo) — é nesse mesmo
-  ponto que o pedido também baixa estoque (`baixarEstoque`, ainda 100%
-  client-side) e credita/debita fidelidade (`creditarCompra`/`usarCashback`,
+  ponto que o servidor baixa o estoque do prato (na mesma transação que grava o
+  pedido) e o cliente credita/debita fidelidade (`creditarCompra`/`usarCashback`,
   idem), nunca antes da confirmação. Diferença de quando isso era só
   `localStorage`: agora essa gravação pode falhar de verdade (rede/servidor)
   — se falhar, mostra um toast de erro e **não** limpa carrinho/cupom, pra
@@ -751,38 +748,32 @@ pedido").
 ## Dados mockados — `data/data.js`
 
 - `NAV_TABS`: abas da navegação superior (hoje só categorias do cardápio).
-- `CATEGORIES`: categorias usadas em `MenuSections`/busca. Igual ao `MENU`
-  abaixo, é `aplicarCategoriasAdmin(CATEGORIES_BASE)` — rótulo das
-  categorias base pode ser renomeado pelo admin (aba Categorias, ids fixos
-  porque `NAV_TABS`/itens do cardápio referenciam por id) e categorias
-  extras criadas lá são anexadas (`tnm_admin_categorias`).
+- `CATEGORIES`, `MENU` e `ADDON_GROUPS` são o catálogo **efetivo**, recebido do servidor
+  (`GET /api/catalogo`, ver "Catálogo no servidor"). São arrays/objetos mutáveis que
+  `aplicarCatalogoServidor` troca no lugar (o `AppContext` chama no mount e a cada evento
+  de socket `catalogo:atualizado`, então a tela atualiza ao vivo); começam com o
+  catálogo-base pra não nascer vazio. Rótulo de categoria base editável pelo admin (ids
+  fixos, `NAV_TABS` referencia), categorias extras anexadas.
 - `MENU`: catálogo completo de itens (id, categoria, nome, descrição,
   preço, preço promocional opcional, tag, ícone/imagem, grupos de
   adicionais aplicáveis, ingredientes removíveis). Imagens (`imgUrl`) são
   placeholders do Unsplash — substituir por fotos reais do estabelecimento
-  antes de qualquer uso real. **`MENU` não é o array cru**: é
-  `aplicarCatalogoAdmin(MENU_BASE)`, calculado 1x no carregamento do
-  módulo — remove itens que o painel admin marcou indisponível/sem estoque
-  (`tnm_admin_menu_overrides`), aplica edição de nome/preço/descrição feita
-  no admin (campos `name`/`price`/`desc` do override viram `nome`/`preco`/
-  `desc` do item), e anexa itens criados no admin (`tnm_admin_menu_extra`).
-  Pra ver uma edição feita no admin, recarregue a página do cliente (não é
-  reativo entre abas).
+  antes de qualquer uso real. Itens indisponíveis ou com estoque 0 já vêm filtrados
+  pelo servidor; preço editado no admin vale como preço final (descarta a promoção do
+  prato base).
 - `UPSELL_IDS`: itens sugeridos no carrinho.
 - `COUPONS`: cupons válidos (mesmos códigos espelhados no PDV do admin).
 - `ADDON_GROUPS`: grupos de adicionais reutilizáveis entre itens (ex.
-  "Turbine seu Hambúrguer", "Escolha o molho", "Escolha sua bebida"). Assim
-  como `MENU`, é `aplicarAddonsAdmin(ADDON_GROUPS_BASE)` — grupos base têm
-  nome/min/max/itens sobrescrevíveis pelo admin (aba Adicionais Globais,
-  `tnm_admin_addon_groups`, id fixo porque `item.addons` referencia por
-  id), grupos extras criados lá são anexados. **Limitação**: a ficha de
+  "Turbine seu Hambúrguer", "Escolha o molho", "Escolha sua bebida"). Grupos base têm
+  nome/min/max/itens sobrescrevíveis pelo admin (aba Adicionais Globais, id fixo porque
+  `item.addons` referencia por id), grupos extras criados lá são anexados. **Limitação**: a ficha de
   prato do admin (aba Pratos) não tem campo pra atribuir grupos de
   adicionais a um item — um grupo extra só passa a valer pra algum prato
   se alguém editar `item.addons` manualmente em `data/data.js`.
 - `REVIEWS_MOCK`: avaliações fictícias pré-existentes por item.
-- `baixarEstoque(itensPedido)`: exportada por este módulo (não é "dado", é
-  a única função aqui) — debita o estoque controlado pelo admin quando um
-  pedido é finalizado; ver `AppContext#finalizarPedido`.
+- `aplicarCatalogoServidor(...)`: troca o conteúdo de `MENU`/`CATEGORIES`/`ADDON_GROUPS` no
+  lugar. A baixa de estoque por venda deixou de ser client-side (`baixarEstoque` foi
+  removida): o servidor faz ao gravar o pedido.
 
 ## Back-end (`server/`) — MVP: pedidos + tempo real
 
@@ -904,6 +895,35 @@ navegador): criar grupo numa sessão, entrar com o código em outra, e
 confirmar que item adicionado por uma aparece ao vivo pra outra com o
 `participanteNome` certo.
 
+## Catálogo no servidor
+
+Fonte única do catálogo-base: `src/data/catalogoBase.js` (sem imports) — lido pelo app, pelo
+gerador do admin **e pelo servidor** (`server/src/lib/catalogo.js` importa de
+`../../../src/data/`; em produção o repositório inteiro está no Render, então o caminho existe).
+As regras que juntam base + edições do admin ficam em `src/data/catalogoAplicar.js` (módulo
+puro: `aplicarCatalogo`, `aplicarCategorias`, `aplicarAddons`, `precoBase`), usado só pelo servidor.
+
+- **Onde mora**: tabela `CatalogoConfig` (4 chaves: `menu_overrides`, `menu_extra`,
+  `categorias`, `addon_groups` — mesmo formato que era `tnm_admin_*` no localStorage) e
+  `EstoquePrato` (`itemId`, `quantidade`; linha ausente = sem controle, 0 = esgotado).
+- **Rotas** (`routes/catalogo.js`): `GET /api/catalogo` (público; cardápio EFETIVO
+  `{menu, categories, addonGroups}`), `GET /api/catalogo/config` e
+  `PUT /api/catalogo/config/:chave` (admin; valida formato com `validarConfig`, limite 8 MB por
+  causa das fotos), `PUT /api/catalogo/estoque/:itemId` (admin; `quantidade` ou `null`).
+  Toda escrita emite `catalogo:atualizado` por socket (clientes e painéis recarregam ao vivo).
+- **Pedido** (`lib/precos.js#conferirPedido`, chamado por `POST /api/pedidos` e `/pdv`): o preço de
+  cada linha é **recalculado** (`precoBase` + adicionais pelo nome, buscados nos grupos do
+  prato; adicional desconhecido ou quantidade absurda = 400). Item fora do cardápio = 409; "só
+  restam N" pelo estoque do prato = 409; cupom conferido na tabela `COUPONS` (inválido = 400);
+  `total` precisa cair entre o mínimo possível e o subtotal (PDV soma `taxaEntrega`, 0–100).
+  Os `itens` gravados levam o nome e o subtotal DO SERVIDOR. O cliente manda `addons` e
+  `ingredientesRemovidos` em cada linha (`montarPedidoPendente`). Estoque do prato é baixado com
+  `updateMany ... quantidade >= pedido` na mesma transação do `Order.create` (2 pedidos no último
+  item: 1 passa, 1 leva 409). `POST /api/pedidos/disponibilidade` roda tudo menos a checagem do
+  total e não grava nada.
+- **Migração**: as edições que estavam no `localStorage` do navegador do admin **não foram
+  migradas** — a aba Pratos passa a mostrar o catálogo-base e o admin refaz o que tinha editado.
+
 ## Segurança (`server/`)
 
 - **Admin**: contas de funcionário no Postgres (`Funcionario`/`Funcao`,
@@ -953,7 +973,8 @@ confirmar que item adicionado por uma aparece ao vivo pra outra com o
 - **Cookie de sessão**: `secure` em produção, `maxAge` de 30 dias.
 - **Testes**: `cd server && npm test` (`test/seguranca.test.js`,
   `test/socket-admin.test.js`, `test/email.test.js`, `test/pedidos-avaliacoes.test.js`,
-  `test/ia.test.js` — 30 testes). Usam o banco do
+  `test/ia.test.js` — 44 testes; os de pedido criam pratos de teste pela API do admin e devolvem o
+  catálogo ao estado original no fim). Usam o banco do
   `.env`: criam registros temporários (`...@teste.local`, funcionários e contas de
   cliente) e apagam no fim; o Resend é simulado, nenhum e-mail sai. **Não rode
   apontando pro banco de produção.**
@@ -1168,7 +1189,7 @@ O admin usa módulos ES entre os próprios arquivos de `public/admin/` (ver
 tabela acima), mas continua sem importar nada do lado do CLIENTE — são
 dois projetos/origens de módulo diferentes (o cardápio do cliente vive em
 `src/data/data.js`, dentro do build do Vite/React). Por isso o catálogo-base
-(`MENU_BASE`, `CATEGORIES_BASE`, `ADDON_GROUPS_BASE`, `COUPONS`, `REVIEWS_MOCK`) vive numa **fonte única**,
+(`MENU_BASE`, `CATEGORIES_BASE`, `ADDON_GROUPS_BASE`, `COUPONS`, `REVIEWS_MOCK`) vive numa **fonte única** (lida também pelo servidor, ver "Catálogo no servidor"),
 `src/data/catalogoBase.js` (módulo sem imports, lido por `data.js`), e
 `scripts/gerar-catalogo-admin.mjs` gera `public/admin/catalogo.gerado.js`
 (visão reduzida dos itens `{id,cat,name,price,desc}`, `price` = `precoPromo ?? preco`; categorias sem o `icon`)
@@ -1196,14 +1217,12 @@ localStorage compartilhado:
 
 - **Lê** `tnm_usuarios` (aba Clientes e Membros da aba Fidelidade). Avaliações
   vêm do back-end (`state.avaliacoesCache`, `GET /api/avaliacoes` + socket).
-- **Lê e escreve** `tnm_admin_menu_overrides`/`tnm_admin_menu_extra` (aba
-  Pratos: esgotar/reabrir/editar nome-preço-descrição/estoque de item
-  existente, ou criar/remover item novo — `data.js#aplicarCatalogoAdmin`
-  aplica isso no cardápio do cliente), `tnm_admin_categorias` (aba
-  Categorias — `data.js#aplicarCategoriasAdmin` aplica no cliente),
-  `tnm_admin_addon_groups` (aba Adicionais Globais —
-  `data.js#aplicarAddonsAdmin` aplica no cliente),
-  `tnm_fidelidade` (ajuste manual de pontos/cashback pela equipe, e crédito
+- **Cardápio, categorias, adicionais e estoque por prato** (abas Pratos, Categorias e
+  Adicionais Globais) **não são mais localStorage**: o admin lê/grava via
+  `/api/catalogo/*` (cache `state.catalogoCfg` em `core.js`: `cfgCatalogo()`,
+  `carregarCatalogoCfg()`, escrita otimista + PUT). Fotos escolhidas são reduzidas a
+  800px/JPEG (`lerImagemReduzida`). Evento `catalogo:atualizado` recarrega o cache.
+- **Lê e escreve** `tnm_fidelidade` (ajuste manual de pontos/cashback pela equipe, e crédito
   de compras feitas no PDV) e `tnm_admin_fidelidade_config` (config do
   clube — só o admin edita, o cliente só lê; inclui o campo opcional
   `foto` de cada recompensa).
@@ -1256,11 +1275,11 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   quem gasta mais) — aqui é a qualidade do atendimento da própria equipe
   que vira ranking, com dado operacional real por trás.
 - **Categorias** (`categorias`, grupo Produtos): CRUD de categorias do
-  cardápio (`tnm_admin_categorias`) — ver `CATEGORIES` em "Dados
+  cardápio (salvas no servidor) — ver `CATEGORIES` em "Dados
   mockados" acima. Categoria base só tem o rótulo editável; categoria
   extra só pode ser excluída se nenhum prato a estiver usando.
 - **Adicionais Globais** (`adicionais`, grupo Produtos): CRUD dos grupos
-  de adicionais (`tnm_admin_addon_groups`) — ver `ADDON_GROUPS` em "Dados
+  de adicionais (salvos no servidor) — ver `ADDON_GROUPS` em "Dados
   mockados" acima, inclusive a limitação de não dar pra atribuir um grupo
   extra a um prato pela UI do admin.
 - **Insumos** e **Ficha Técnica** (`insumos`/`fichaTecnica`, grupo
@@ -1330,17 +1349,14 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   endereço do pedido (`pedido.endereco`) quando informado, e lista as
   últimas 10 entregas concluídas.
 - **Pratos**: cardápio (ver acima) + campo de estoque por item — ao chegar
-  a 0, some do cardápio do cliente automaticamente (`aplicarCatalogoAdmin`).
-  Vendas do PDV **e** pedidos do cliente decrementam o mesmo estoque
-  (`decrementarEstoque` no admin, `baixarEstoque` em `data.js` do cliente —
-  mesma lógica, duplicada). Preço aceita casas decimais livres (`step`
+  a 0, some do cardápio do cliente automaticamente (tabela `EstoquePrato`).
+  Vendas do PDV **e** pedidos do cliente decrementam o mesmo estoque, no servidor,
+  de forma atômica. Preço aceita casas decimais livres (`step`
   0.01, não trava em múltiplos de R$0,50). Adicionar/editar prato aceita
-  upload de foto (`<input type="file">` lido como base64 via `FileReader`,
-  campo `foto` no override/extra) — mostrada no card do admin no lugar do
-  ícone de letra, e propagada pro cliente como `imgUrl` do item via
-  `aplicarCatalogoAdmin`. Botão "Editar" abre um modal pra corrigir nome/
-  preço/descrição/foto de um item (base ou criado no admin) — reflete no
-  cliente via `aplicarCatalogoAdmin` (ver acima).
+  upload de foto (reduzida no navegador, campo `foto` no override/extra) — mostrada
+  no card do admin e propagada pro cliente como `imgUrl`. Botão "Editar" abre um
+  modal pra corrigir nome/preço/descrição/foto de um item (base ou criado no admin);
+  sem foto nova, a existente é mantida.
 - **Avaliações / Pedidos**: ver pedidos reais; filtro de avaliações por
   nota inclui 1 a 5 estrelas (mais "Todas"). A aba Pedidos tem botão
   "Exportar CSV" do período filtrado (`exportarCSV`, Blob + `<a download>`,
@@ -1414,8 +1430,8 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   tudo-ou-nada (sem recebimento parcial); `ContaReceber` é só pra
   recebíveis avulsos, não ligados a pedido; rotas protegidas só por sessão
   de funcionário (ver "Segurança");
-  disponibilidade de prato pro cliente React continua 100% baseada no
-  `dish.estoque` de hoje, não integrada ao novo estoque de insumo.
+  o estoque por prato (`EstoquePrato`) e o de insumo (ficha técnica) são
+  controles independentes — um pedido precisa passar nos dois.
 - **Carteira**: o PIN protege contra alguém folheando a UI, mas não é uma
   barreira real — mesmo nível de confiança que o resto do app já tem
   documentado (quem mexe no DevTools consegue ler/editar `tnm_carteira_pin`
@@ -1457,13 +1473,14 @@ baterem (senão o resultado ficaria escondido atrás do recolhimento).
   **ativo** (ver "ERP"). Sem ficha/insumo cadastrado não há o que limitar (o pedido
   passa) — travar tudo travaria o restaurante enquanto o cadastro está vazio.
   Checagem e baixa são passos separados: 2 pedidos simultâneos no último item podem
-  passar juntos. O estoque por prato do admin (`dish.estoque`) continua só no
-  `localStorage` do navegador do admin, **não alcança outros celulares** (o cardápio
-  editado no admin também não). Upgrade: mover catálogo e estoque de prato pro Postgres.
-- `POST /api/pedidos` valida formato/limites (itens, qtd, tamanho de texto,
-  tipo) mas **continua confiando em `total`/`cupom`/`cashbackUsado`
-  vindos do cliente** — o catálogo mora no front, então o servidor não
-  recalcula preço. Upgrade: mover `MENU` pro Postgres.
+  passar juntos (só a checagem de ingrediente; o estoque por prato é atômico).
+- **Preço conferido no servidor** (ver "Catálogo no servidor"): `total` é validado contra o
+  catálogo, mas **cashback e desconto da assinatura Casa do Pato+ continuam vindo do
+  cliente** (o extrato de fidelidade é `localStorage`): o servidor aceita um total
+  entre `subtotal − desconto − cashback` e `subtotal`, exige conta logada pra
+  cashback/assinatura e limita a assinatura a 10%. Quem fabricar um saldo de cashback
+  no DevTools ainda consegue abatê-lo até o limite do subtotal. Upgrade: mover a
+  fidelidade pro Postgres.
 - Códigos de confirmação/recuperação vivem em memória do processo (somem se o
   servidor reiniciar, ex.: o plano grátis do Render "dorme" — o cliente pede outro).
   Sem `RESEND_API_KEY` não há confirmação de cadastro; sem domínio verificado no

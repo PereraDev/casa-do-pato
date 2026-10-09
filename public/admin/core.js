@@ -8,8 +8,9 @@
 import { rerenderSecaoAtiva } from "./nav.js";
 // Catálogo-base, cupons e avaliações mock: GERADOS de src/data/catalogoBase.js
 // (npm run gerar:catalogo, roda sozinho em predev/prebuild). Edições feitas
-// aqui (preço/descrição/disponibilidade) vão pra tnm_admin_menu_overrides e
-// itens novos pra tnm_admin_menu_extra — lidos de volta pelo app cliente.
+// aqui (preço/descrição/disponibilidade, pratos novos, categorias, adicionais, estoque)
+// vão pro Postgres via /api/catalogo/* (cache em state.catalogoCfg) — o app cliente e o
+// servidor leem de lá, então valem pra todos os dispositivos.
 import { MENU_BASE, CATEGORIES_BASE, ADDON_GROUPS_BASE, COUPONS, REVIEWS_MOCK } from "./catalogo.gerado.js";
 export { COUPONS };
 
@@ -87,13 +88,49 @@ export function api(path, options) {
   });
 }
 
-/* ---- Categorias (tnm_admin_categorias) — aba "Categorias". Categorias
+/* ---- Edições do catálogo no servidor ----
+   state.catalogoCfg espelha GET /api/catalogo/config: { menu_overrides, menu_extra, categorias,
+   addon_groups, estoque }. Leitura síncrona do cache (as telas já eram síncronas); escrita
+   otimista no cache + PUT em segundo plano — se o servidor recusar, avisa e recarrega. */
+export function cfgCatalogo() {
+  return state.catalogoCfg || { menu_overrides: {}, menu_extra: [], categorias: { overrides: {}, extras: [] }, addon_groups: { overrides: {}, extras: [] }, estoque: {} };
+}
+export function carregarCatalogoCfg() {
+  return api("/api/catalogo/config").then(function (c) { state.catalogoCfg = c; });
+}
+function salvarCfg(chave, valor) {
+  state.catalogoCfg = Object.assign({}, cfgCatalogo());
+  state.catalogoCfg[chave] = valor;
+  api("/api/catalogo/config/" + chave, { method: "PUT", body: { valor: valor } }).catch(function (err) {
+    alert("Não foi possível salvar: " + err.message);
+    carregarCatalogoCfg().then(rerenderSecaoAtiva);
+  });
+}
+// Foto escolhida pelo admin: reduz pra no máx. 800px em JPEG antes de guardar (a foto de
+// celular tem vários MB e iria inteira no banco e em todo carregamento do cardápio).
+export function lerImagemReduzida(file, aoLer) {
+  var url = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function () {
+    var escala = Math.min(1, 800 / Math.max(img.width, img.height));
+    var canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * escala);
+    canvas.height = Math.round(img.height * escala);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    aoLer(canvas.toDataURL("image/jpeg", 0.75));
+  };
+  img.onerror = function () { URL.revokeObjectURL(url); alert("Não foi possível ler essa imagem."); };
+  img.src = url;
+}
+
+/* ---- Categorias (aba "Categorias"). Categorias
    base só têm o rótulo renomeável (o id é referenciado pelas abas do
    cliente e pelos pratos, não pode sumir); categorias extras criadas
    aqui podem ser removidas de volta, contanto que nenhum prato as use
    mais. Mesma chave lida por data.js#aplicarCategoriasAdmin no cliente. */
-export function getCategoriasDados() { return lsGet("tnm_admin_categorias", {overrides:{}, extras:[]}); }
-export function saveCategoriasDados(dados) { lsSet("tnm_admin_categorias", dados); }
+export function getCategoriasDados() { return cfgCatalogo().categorias; }
+export function saveCategoriasDados(dados) { salvarCfg("categorias", dados); }
 export function getCategorias() {
   var dados = getCategoriasDados();
   var overrides = dados.overrides || {};
@@ -110,8 +147,8 @@ export function catLabel(id) {
 
 
 
-export function getAddonDados() { return lsGet("tnm_admin_addon_groups", {overrides:{}, extras:[]}); }
-export function saveAddonDados(dados) { lsSet("tnm_admin_addon_groups", dados); }
+export function getAddonDados() { return cfgCatalogo().addon_groups; }
+export function saveAddonDados(dados) { salvarCfg("addon_groups", dados); }
 export function getAddonGroups() {
   var dados = getAddonDados();
   var overrides = dados.overrides || {};
@@ -147,27 +184,29 @@ export function getDishes() {
   // Mostra TODOS os pratos aqui (inclusive esgotados, com botão "Reabrir")
   // — quem esconde um prato indisponível do cardápio do cliente é o
   // data.js do app React (aplicarOverridesAdmin), não esta tela.
-  var overrides = lsGet("tnm_admin_menu_overrides", {});
-  var extras = lsGet("tnm_admin_menu_extra", []);
+  var cfg = cfgCatalogo();
+  var overrides = cfg.menu_overrides;
   var base = MENU_BASE.map(function (d) {
     var o = overrides[d.id];
     return o ? Object.assign({available:true}, d, o) : Object.assign({available:true}, d);
   });
-  return base.concat(extras);
+  return base.concat(cfg.menu_extra).map(function (d) {
+    return cfg.estoque[d.id] === undefined ? d : Object.assign({}, d, {estoque: cfg.estoque[d.id]});
+  });
 }
 export function saveDishOverride(id, patch) {
-  var overrides = lsGet("tnm_admin_menu_overrides", {});
+  var overrides = Object.assign({}, cfgCatalogo().menu_overrides);
   overrides[id] = Object.assign({}, overrides[id], patch);
-  lsSet("tnm_admin_menu_overrides", overrides);
+  salvarCfg("menu_overrides", overrides);
 }
 export function addDishExtra(dish) {
-  var extras = lsGet("tnm_admin_menu_extra", []);
-  extras.push(dish);
-  lsSet("tnm_admin_menu_extra", extras);
+  salvarCfg("menu_extra", cfgCatalogo().menu_extra.concat([dish]));
+}
+export function updateDishExtra(id, patch) {
+  salvarCfg("menu_extra", cfgCatalogo().menu_extra.map(function (d) { return d.id === id ? Object.assign({}, d, patch) : d; }));
 }
 export function removeDishExtra(id) {
-  var extras = lsGet("tnm_admin_menu_extra", []).filter(function (d) { return d.id !== id; });
-  lsSet("tnm_admin_menu_extra", extras);
+  salvarCfg("menu_extra", cfgCatalogo().menu_extra.filter(function (d) { return d.id !== id; }));
 }
 export function isBaseDish(id) { return MENU_BASE.some(function (d) { return d.id === id; }); }
 
@@ -394,42 +433,19 @@ export function lojaAberta() {
   return hhmm >= config.horaAbertura && hhmm <= config.horaFechamento;
 }
 
-/* ---- Estoque (mora dentro dos mesmos overrides/extra do cardápio) ----
+/* ---- Estoque por prato (tabela EstoquePrato no servidor) ----
    dish.estoque === undefined  -> sem controle de estoque (sempre disponível)
-   dish.estoque === número     -> controlado; chega a 0 = some do cardápio
-   do cliente também (ver aplicarCatalogoAdmin em data.js). */
+   dish.estoque === número     -> controlado; chega a 0 = some do cardápio do cliente.
+   A baixa por venda é feita pelo SERVIDOR ao gravar o pedido (routes/pedidos.js). */
 export function setEstoqueDish(dish, valor) {
-  valor = valor === "" || valor === null ? undefined : Math.max(0, parseInt(valor, 10) || 0);
-  if (isBaseDish(dish.id)) {
-    saveDishOverride(dish.id, {estoque: valor});
-  } else {
-    var extras = lsGet("tnm_admin_menu_extra", []).map(function (d) {
-      return d.id === dish.id ? Object.assign({}, d, {estoque: valor}) : d;
-    });
-    lsSet("tnm_admin_menu_extra", extras);
-  }
-}
-// Mesma lógica de data.js#baixarEstoque, duplicada aqui porque o painel é
-// HTML solto (não importa o módulo ES do cliente) — usada tanto por vendas
-// do PDV quanto (indiretamente, do lado do cliente) por finalizarPedido.
-export function decrementarEstoque(itens) {
-  var overrides = lsGet("tnm_admin_menu_overrides", {});
-  var extras = lsGet("tnm_admin_menu_extra", []);
-  var overridesMudou = false, extrasMudou = false;
-  itens.forEach(function (it) {
-    if (typeof (overrides[it.itemId] || {}).estoque === "number") {
-      overrides[it.itemId] = Object.assign({}, overrides[it.itemId], {estoque: Math.max(0, overrides[it.itemId].estoque - it.qtd)});
-      overridesMudou = true;
-      return;
-    }
-    var idx = extras.findIndex(function (e) { return e.id === it.itemId; });
-    if (idx !== -1 && typeof extras[idx].estoque === "number") {
-      extras[idx] = Object.assign({}, extras[idx], {estoque: Math.max(0, extras[idx].estoque - it.qtd)});
-      extrasMudou = true;
-    }
+  valor = valor === "" || valor === null ? null : Math.max(0, parseInt(valor, 10) || 0);
+  var estoque = Object.assign({}, cfgCatalogo().estoque);
+  if (valor === null) delete estoque[dish.id]; else estoque[dish.id] = valor;
+  state.catalogoCfg = Object.assign({}, cfgCatalogo(), {estoque: estoque});
+  api("/api/catalogo/estoque/" + encodeURIComponent(dish.id), { method: "PUT", body: { quantidade: valor } }).catch(function (err) {
+    alert("Não foi possível salvar o estoque: " + err.message);
+    carregarCatalogoCfg().then(rerenderSecaoAtiva);
   });
-  if (overridesMudou) lsSet("tnm_admin_menu_overrides", overrides);
-  if (extrasMudou) lsSet("tnm_admin_menu_extra", extras);
 }
 
 /* ---- Caixa / sangria (tnm_admin_caixas) — só existe no admin, o app
@@ -636,6 +652,7 @@ export var state = {
   // daqui, não mais de localStorage.
   pedidosCache: [],
   avaliacoesCache: {},
+  catalogoCfg: null,
   chamadasCache: [],
   usuariosCache: [],
 
@@ -796,7 +813,7 @@ export var SECTIONS = [
 export var socket = io({ path: "/socket.io" });
 
 export function carregarCachesEmTempoReal() {
-  return Promise.all([carregarPedidosCache(), carregarChamadasCache(), carregarAvaliacoesCache()]);
+  return Promise.all([carregarPedidosCache(), carregarChamadasCache(), carregarAvaliacoesCache(), carregarCatalogoCfg()]);
 }
 // Registrado 1x só (ver jaInicializado em init.js) — religar estes
 // listeners a cada login duplicaria as reações a cada evento.
@@ -841,6 +858,8 @@ export function initSocket() {
     rerenderSecaoAtiva();
   });
   // ERP — mesmo padrão de patch de cache dos eventos acima.
+  // Cardápio/estoque mudou (outro admin editou, ou uma venda baixou o estoque de um prato).
+  socket.on("catalogo:atualizado", function () { carregarCatalogoCfg().then(rerenderSecaoAtiva); });
   socket.on("estoque:baixo", function () { carregarInsumosCache().then(rerenderSecaoAtiva); });
   socket.on("estoque:atualizado", function (insumos) {
     insumos.forEach(function (novo) {
