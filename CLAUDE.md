@@ -171,7 +171,7 @@ pedaço de estado cabe num destes grupos:
 
 Chaves usadas no `localStorage` (prefixo `tnm_`): `tnm_cart`,
 `tnm_tipo_pedido`, `tnm_pagamento`, `tnm_mesa`, `tnm_endereco`, `tnm_obs`,
-`tnm_cupom`, `tnm_usar_cashback`, `tnm_pessoas`,
+`tnm_cupom`, `tnm_usar_cashback`, `tnm_pessoas`, `tnm_fonte` (tamanho do texto A+/A-),
 `tnm_favoritos`, `tnm_favoritos_personalizados`. `tnm_pedidos` e
 `tnm_sessao` **não existem mais** — pedidos e sessão de login vêm do
 back-end agora (ver acima); `tnm_usuarios` também não existe mais do lado
@@ -336,7 +336,9 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
 - **Pedidos / histórico**: os pedidos em si (`pedidos` no `AppContext`)
   agora vêm do back-end — `GET /api/pedidos/meus` no mount (escopado pela
   sessão: conta logada ou `guestId` de visitante, nunca "todos os pedidos
-  deste navegador" como era antes) e mantidos em dia por um listener de
+  deste navegador" como era antes; **visitante só vê os pedidos das últimas 6 h**, ver
+  `JANELA_VISITANTE_HORAS` em `routes/pedidos.js`: o cookie de visitante dura 30 dias e a lista nunca
+  "zerava"; conta logada vê tudo) e mantidos em dia por um listener de
   socket (`pedido:atualizado`) que faz patch no array local quando o admin
   avança o KDS ou cancela. O **cálculo do status em si continua 100%
   client-side**: `statusPedido` (`utils/utils.js`) deriva do tempo
@@ -611,7 +613,8 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   mesmo padrão usado pelo admin pra fotos de prato/recompensa), salva no
   campo `foto` da review e mostrada abaixo do comentário.
 - **Acessibilidade**: alto contraste, aumentar/diminuir fonte (CSS var
-  `--font-scale`), reduzir movimento, leitura em voz alta via
+  `--font-scale`, aplicada em `html { font-size: calc(100% * var(--font-scale)) }` porque todo o
+  CSS é em `rem`; persistida em `tnm_fonte`, limites 0.85–1.4), reduzir movimento, leitura em voz alta via
   `SpeechSynthesisUtterance` ao focar cards/adicionais/avaliações
   (Tab/foco, não mouse). `falarTexto` (função única no `AppContext`,
   reaproveitada pela leitura por foco e pelo resumo em voz) também guarda o
@@ -620,7 +623,14 @@ entrega e tempo médio de preparo — só existe no admin, usada no PDV).
   acompanhar o texto sem áudio. Ao abrir o checkout, `falarResumoPedido`
   lê em voz alta os itens e o total antes de confirmar o pagamento (só com
   o leitor ativo).
-- **Toast**: notificação simples, autodesaparece em 2.6s.
+- **Toast**: notificação simples, autodesaparece em 2.6s (mais tempo se a mensagem é longa).
+- **Celular (layout e toque)**: `html` tem `overflow-x: hidden` e `body` `overflow-x: clip` (nada cria rolagem
+  lateral; `clip` pra não quebrar o header sticky); `touch-action: manipulation` em botões/links tira o
+  atraso do toque; `ModalSheet` foca com `preventScroll` (o sheet nasce fora da tela e o foco comum rolava a
+  página de lado no iOS); a faixa de abas é centralizada só por `scrollTo` horizontal da própria faixa
+  (`header.jsx#centralizarAba`, sem `scrollIntoView`, que disputava com a rolagem suave da seção);
+  rolagem animada respeita o botão "Reduzir movimento" e `prefers-reduced-motion` (`movimentoReduzido`).
+  Topbar: marca com `min-width: 0`/`flex-wrap`, botões `flex: none`; bottom nav com `min-height`.
 
 ## Navegação / roteamento de tela
 

@@ -54,13 +54,36 @@ body.contraste-alto .item-desconto {
 }
 html {
   scroll-behavior: smooth;
+  /* Escala do A+/A- na RAIZ: todo o CSS é em rem, que é relativo ao <html>. Antes a escala
+     ficava no <body> e só o que herdava (em/%) mudava — quase nada. 100% (em vez de 16px)
+     respeita também o tamanho de fonte que a pessoa já configurou no navegador/sistema. */
+  font-size: calc(100% * var(--font-scale));
+  -webkit-text-size-adjust: 100%; /* iOS não reescala o texto sozinho ao girar a tela */
+  text-size-adjust: 100%;
+  /* Rede de segurança: nada pode criar rolagem lateral da página (focar um elemento fora
+     da tela, sombra, transform...). Os carrosséis têm a própria rolagem interna. */
+  overflow-x: hidden;
+}
+/* Resposta imediata ao toque: tira o atraso de ~300ms do toque duplo (zoom) e o realce cinza
+   do iOS/Android, sem desligar o zoom por pinça (acessibilidade). */
+a,
+button,
+input,
+select,
+textarea,
+label,
+summary,
+[role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: calc(16px * var(--font-scale));
+  font-size: 1rem;
+  overflow-x: clip; /* clip (não hidden): não vira contêiner de rolagem e preserva o header sticky */
   -webkit-font-smoothing: antialiased;
   padding-bottom: 2rem;
 }
@@ -136,6 +159,9 @@ body.reduzir-movimento * {
   gap: 0.4rem;
   flex-wrap: wrap;
   padding: 0.5rem 0.8rem;
+  /* fica no header sticky: com fonte grande não pode ocupar a tela toda */
+  max-height: 40vh;
+  overflow-y: auto;
 }
 .a11y-bar[hidden] {
   display: none;
@@ -221,8 +247,10 @@ body.reduzir-movimento * {
   font-size: 1.15rem;
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* com fonte grande o nome desce de linha em vez de empurrar os botões pra fora */
   gap: 0.4rem;
   flex: 1;
+  min-width: 0;
 }
 .brand em {
   color: var(--accent-soft);
@@ -232,11 +260,13 @@ body.reduzir-movimento * {
   width: 32px;
   height: 32px;
   border-radius: 8px;
+  flex: none;
 }
 
 .topbar-actions {
   display: flex;
   gap: 0.5rem;
+  flex: none; /* os botões nunca encolhem nem saem da tela: quem cede é o nome da marca */
 }
 .badge {
   position: absolute;
@@ -269,13 +299,15 @@ body.reduzir-movimento * {
   right: 0;
   bottom: 0;
   z-index: 45;
-  height: var(--bottom-nav-h);
+  min-height: var(--bottom-nav-h); /* cresce com a fonte grande em vez de cortar o rótulo */
+  padding-bottom: env(safe-area-inset-bottom); /* barra home do iPhone */
   background: rgba(11, 12, 16, 0.96);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
 }
 .bottom-nav-item {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -443,7 +475,9 @@ body.reduzir-movimento * {
   overflow-x: auto;
   padding: 0 1rem;
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
+  overscroll-behavior-x: contain; /* arrastar a faixa não puxa a página de lado */
+  /* sem scroll-behavior aqui: a rolagem suave é feita por JS (header.jsx#centralizarAba), pra
+     não brigar com a rolagem suave da página */
 }
 .tabs-track::-webkit-scrollbar {
   display: none;

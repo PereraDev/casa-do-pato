@@ -26,6 +26,7 @@ function camposComuns(body) {
 }
 
 const TIPOS = ["balcao", "mesa", "entrega"];
+const JANELA_VISITANTE_HORAS = 6;
 const STATUS_KDS = ["recebido", "preparo", "pronto", "entregue"];
 const texto = (v, max) => v == null || (typeof v === "string" && v.length <= max);
 
@@ -144,11 +145,15 @@ export default async function pedidosRoutes(fastify) {
   });
 
   // Histórico de "meus pedidos" — conta logada ou visitante (guestId),
-  // nunca bloqueado (ver CLAUDE.md, "Conta/sessão").
+  // nunca bloqueado (ver CLAUDE.md, "Conta/sessão"). Conta logada vê o histórico inteiro;
+  // visitante só vê os pedidos da VISITA ATUAL (últimas 6 h): o cookie de visitante dura 30
+  // dias e, sem esse corte, a lista de quem já passou por aqui nunca "zerava" ao recarregar.
   fastify.get("/api/pedidos/meus", async (request) => {
     const userId = request.session.get("userId");
     const guestId = request.session.get("guestId");
-    const where = userId ? { userId } : { guestId };
+    const where = userId
+      ? { userId }
+      : { guestId, criadoEm: { gte: new Date(Date.now() - JANELA_VISITANTE_HORAS * 3600e3) } };
     const orders = await prisma.order.findMany({ where, orderBy: { criadoEm: "desc" } });
     return orders.map(serializarPedido);
   });

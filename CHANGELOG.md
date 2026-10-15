@@ -7,6 +7,30 @@ arquitetura atual, sem histórico) — aqui é histórico; lá é o "estado atua
 
 ---
 
+## 2026-10-15 — Teste real no iPhone: tamanho do texto, rolagem lateral, toque e histórico
+
+### Tamanho do texto (A+/A-) não funcionava
+- Causa: `--font-scale` era aplicada no `body`, mas todo o CSS usa `rem`, que é relativo ao `html`
+  (sempre 16px). Só o que herdava `em`/% mudava. Agora a escala fica em
+  `html { font-size: calc(100% * var(--font-scale)) }` (100% também respeita a fonte configurada no
+  sistema) e é persistida em `tnm_fonte`.
+
+### Layout deslocado no celular
+- Causa mais provável (não reproduz no Chrome emulado; validar no iPhone): `focus()` do `ModalSheet` em
+  elemento fora da tela fazia o navegador rolar a página de lado. Agora `preventScroll`; `html`/`body`
+  não rolam na horizontal; marca com `min-width: 0`/`flex-wrap` e botões `flex: none`; bottom nav com
+  `min-height`; barra de acessibilidade com altura máxima.
+
+### Toque nas abas
+- `scrollIntoView` + `scrollTo` suaves ao mesmo tempo disputavam a rolagem; agora só a faixa rola (JS) e a
+  página rola uma vez. `touch-action: manipulation` tira o atraso do toque. Respeita "Reduzir movimento".
+
+### Histórico de pedidos do visitante
+- O cookie de visitante dura 30 dias, então o histórico nunca "zerava". Visitante agora só vê os pedidos
+  das últimas 6 h; conta logada mantém tudo.
+
+---
+
 ## 2026-10-09 (2) — Catálogo no Postgres e preço conferido no servidor
 
 ### Problema

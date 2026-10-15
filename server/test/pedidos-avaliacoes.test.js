@@ -234,6 +234,17 @@ test("PDV: preços conferidos também, com taxa de entrega somada", async () => 
   assert.equal((await req("POST", "/api/pedidos/pdv", pedido([item("bb03", 1)]))).statusCode, 401);
 });
 
+test("visitante só vê no histórico os pedidos da visita atual (6 h); os antigos 'zeram'", async () => {
+  const velho = await faz(pedido([item("bb03", 1)], { total: 5 }));
+  const cookie = cookieDe(velho);
+  const seq = Number(velho.json().id.split("-")[1]);
+  await app.prisma.order.update({ where: { seq }, data: { criadoEm: new Date(Date.now() - 7 * 3600e3) } });
+  const novo = await req("POST", "/api/pedidos", pedido([item("bb03", 1)], { total: 5 }), cookie);
+  assert.equal(novo.statusCode, 201);
+  const ids = (await req("GET", "/api/pedidos/meus", undefined, cookie)).json().map((p) => p.id);
+  assert.deepEqual(ids, [novo.json().id]);
+});
+
 /* ---------------- avaliações ---------------- */
 
 test("avaliação: validações de entrada", async () => {

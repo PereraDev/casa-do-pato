@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NAV_TABS, CATEGORIES } from "../data/data.js";
 import { useApp } from "../context/AppContext.jsx";
-import { rolarParaSecao, MOTIVO_GARCOM } from "../utils/utils.js";
+import { rolarParaSecao, movimentoReduzido, MOTIVO_GARCOM } from "../utils/utils.js";
 
 // Barra de topo fixa: marca, saudação (1º nome de quem está logado/
 // visitante) e os atalhos de conta/acessibilidade/chamar garçom/busca/
@@ -310,6 +310,19 @@ export function SearchBar() {
   );
 }
 
+// Centraliza a aba tocada DENTRO da faixa de abas (só rolagem horizontal da faixa).
+// scrollIntoView mexia também na rolagem vertical da página e disputava com o scrollTo suave
+// da seção: no celular o toque às vezes "não pegava" ou a tela dava tranco.
+function centralizarAba(aba) {
+  const faixa = aba.parentElement;
+  if (!faixa) return;
+  const dentro = aba.getBoundingClientRect().left - faixa.getBoundingClientRect().left;
+  faixa.scrollTo({
+    left: faixa.scrollLeft + dentro - (faixa.clientWidth - aba.offsetWidth) / 2,
+    behavior: movimentoReduzido() ? "auto" : "smooth",
+  });
+}
+
 export function TabsNav() {
   const { tabAtiva, setTabAtiva } = useApp();
 
@@ -334,11 +347,7 @@ export function TabsNav() {
             className={"tab-pill" + (tabAtiva === tab.id ? " ativo" : "")}
             onClick={(e) => {
               onClickTab(tab);
-              e.currentTarget.scrollIntoView({
-                behavior: "smooth",
-                block: "nearest",
-                inline: "center",
-              });
+              centralizarAba(e.currentTarget);
             }}
           >
             {tab.icon ? tab.icon + " " : ""}

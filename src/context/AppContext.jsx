@@ -403,7 +403,10 @@ export function AppProvider({ children }) {
 
   /* ---------------- Acessibilidade (transiente, como no original) -------- */
   const [contrasteAlto, setContrasteAlto] = useState(false);
-  const [fontScale, setFontScale] = useState(1);
+  // Tamanho do texto (A+/A-) persiste entre visitas: quem precisa de fonte maior não deve ter
+  // que refazer o ajuste a cada reload. Valor lido do disco é validado (limites 0.85–1.4).
+  const [fontScaleSalva, setFontScale] = useLocalStorageState("tnm_fonte", 1);
+  const fontScale = Number.isFinite(fontScaleSalva) ? Math.min(1.4, Math.max(0.85, fontScaleSalva)) : 1;
   const [reduzirMovimento, setReduzirMovimento] = useState(false);
   const [leitorAtivo, setLeitorAtivo] = useState(false);
   const [legendasAtivas, setLegendasAtivas] = useState(false);
@@ -1806,10 +1809,10 @@ export function AppProvider({ children }) {
     setContrasteAlto((v) => !v);
   }
   function aumentarFonte() {
-    setFontScale((v) => Math.min(1.4, Math.round((v + 0.1) * 100) / 100));
+    setFontScale((v) => Math.min(1.4, Math.round(((Number.isFinite(v) ? v : 1) + 0.1) * 100) / 100));
   }
   function diminuirFonte() {
-    setFontScale((v) => Math.max(0.85, Math.round((v - 0.1) * 100) / 100));
+    setFontScale((v) => Math.max(0.85, Math.round(((Number.isFinite(v) ? v : 1) - 0.1) * 100) / 100));
   }
   function toggleReduzirMovimento() {
     setReduzirMovimento((v) => !v);

@@ -967,11 +967,20 @@ export function interpolarPosicao(origem, destino, fracao) {
    "descer demais": o usuário precisava rolar pra cima manualmente pra
    revelar o conteúdo que ficou encoberto.
    ========================================================================== */
+// Quem pediu menos movimento (botão da barra de acessibilidade ou configuração do sistema)
+// recebe rolagem instantânea em vez de animada.
+export function movimentoReduzido() {
+  return (
+    document.body.classList.contains("reduzir-movimento") ||
+    Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
+  );
+}
+
 export function rolarParaSecao(id) {
   const secao = document.getElementById(`secao-${id}`);
   if (!secao) return;
   const header = document.querySelector(".header-fixo");
   const alturaHeader = header ? header.getBoundingClientRect().height : 0;
   const topoSecao = secao.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({ top: topoSecao - alturaHeader - 8, behavior: "smooth" });
+  window.scrollTo({ top: topoSecao - alturaHeader - 8, behavior: movimentoReduzido() ? "auto" : "smooth" });
 }

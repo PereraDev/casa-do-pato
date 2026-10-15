@@ -129,7 +129,9 @@ export function ModalSheet({
       sheet.removeAttribute("inert");
       // Ao abrir, joga o foco pro 1º elemento focável de dentro do sheet
       // (não necessariamente o primeiro botão visual — é a ordem do DOM).
-      elementosFocaveis(sheet)[0]?.focus();
+      // preventScroll: o sheet nasce fora da tela (translateX) e, sem isso, o navegador rola
+      // a página até ele ao focar — no iOS isso deixava o layout deslocado pro lado.
+      elementosFocaveis(sheet)[0]?.focus({ preventScroll: true });
 
       // "Focus trap": intercepta Tab/Shift+Tab nas bordas do modal pra não
       // deixar o foco escapar pro resto da página enquanto ele está aberto.
@@ -158,7 +160,7 @@ export function ModalSheet({
     // existir no DOM.
     sheet.setAttribute("inert", "");
     const anterior = focoAnteriorRef.current;
-    if (anterior && document.contains(anterior)) anterior.focus();
+    if (anterior && document.contains(anterior)) anterior.focus({ preventScroll: true });
   }, [open]);
 
   return (
